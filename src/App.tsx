@@ -274,9 +274,32 @@ export default function App() {
       const remoteModal = setts ? Number(setts.modal_awal) : INITIAL_MODAL_AWAL;
       setModalAwal(remoteModal);
 
+      if (setts) {
+        const remoteProfileName = setts.profile_name || 'Operator Baselab';
+        const remoteProfileImage = setts.profile_image || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80';
+        const remoteLoginLogo = setts.login_logo || '';
+        const remoteLoginHeader = setts.login_header || '';
+
+        setProfileName(remoteProfileName);
+        setProfileImage(remoteProfileImage);
+        setLoginLogo(remoteLoginLogo);
+        setLoginHeader(remoteLoginHeader);
+        localStorage.setItem('baselab_profile_name', remoteProfileName);
+        localStorage.setItem('baselab_profile_image', remoteProfileImage);
+        localStorage.setItem('baselab_login_logo', remoteLoginLogo);
+        localStorage.setItem('baselab_login_header', remoteLoginHeader);
+      }
+
       // If user settings don't exist yet, insert them
       if (errSet && errSet.code === 'PGRST116') {
-        await supabase.from('user_settings').insert({ user_id: userId, modal_awal: INITIAL_MODAL_AWAL });
+        await supabase.from('user_settings').insert({
+          user_id: userId,
+          modal_awal: INITIAL_MODAL_AWAL,
+          profile_name: profileName,
+          profile_image: profileImage,
+          login_logo: loginLogo,
+          login_header: loginHeader
+        });
       }
 
       // 2. Fetch consumables
@@ -408,6 +431,40 @@ export default function App() {
     } else {
       showToast('Modal awal disimpan lokal.', 'success');
     }
+  };
+
+  const saveProfileSettingsAction = async () => {
+    localStorage.setItem('baselab_profile_name', profileName);
+    localStorage.setItem('baselab_profile_image', profileImage);
+    localStorage.setItem('baselab_login_logo', loginLogo);
+    localStorage.setItem('baselab_login_header', loginHeader);
+
+    const uid = getUserId();
+    if (supabase && uid) {
+      const { error } = await supabase
+        .from('user_settings')
+        .upsert({
+          user_id: uid,
+          modal_awal: modalAwal,
+          profile_name: profileName,
+          profile_image: profileImage,
+          login_logo: loginLogo,
+          login_header: loginHeader
+        }, { onConflict: 'user_id' });
+
+      if (error) {
+        console.error(error);
+        showToast('Profil tersimpan lokal, tetapi gagal disinkronkan ke Supabase.', 'error');
+        return;
+      }
+
+      setShowProfileModal(false);
+      showToast('Profil & branding berhasil disimpan ke Supabase!', 'success');
+      return;
+    }
+
+    setShowProfileModal(false);
+    showToast('Profil & branding berhasil disimpan secara lokal.', 'success');
   };
 
   // 2. BEBAN OPERASIONAL CRUD
@@ -1672,14 +1729,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  localStorage.setItem('baselab_profile_name', profileName);
-                  localStorage.setItem('baselab_profile_image', profileImage);
-                  localStorage.setItem('baselab_login_logo', loginLogo);
-                  localStorage.setItem('baselab_login_header', loginHeader);
-                  setShowProfileModal(false);
-                  showToast('Profil & branding halaman login berhasil disimpan!', 'success');
-                }}
+                onClick={saveProfileSettingsAction}
                 className="px-4.5 py-2 text-xs font-semibold bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
               >
                 Simpan Perubahan

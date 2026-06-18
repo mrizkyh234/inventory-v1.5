@@ -28,9 +28,19 @@ CREATE TABLE IF NOT EXISTS user_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   modal_awal NUMERIC NOT NULL DEFAULT 10000000 CHECK (modal_awal >= 0),
+  profile_name TEXT NOT NULL DEFAULT 'Operator Baselab',
+  profile_image TEXT NOT NULL DEFAULT '',
+  login_logo TEXT NOT NULL DEFAULT '',
+  login_header TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   CONSTRAINT unique_user_settings UNIQUE(user_id)
 );
+
+-- Profile and branding columns for installations created from an older schema.
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS profile_name TEXT NOT NULL DEFAULT 'Operator Baselab';
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS profile_image TEXT NOT NULL DEFAULT '';
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS login_logo TEXT NOT NULL DEFAULT '';
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS login_header TEXT NOT NULL DEFAULT '';
 
 -- 2. Create table for expenses
 CREATE TABLE IF NOT EXISTS operating_expenses (
