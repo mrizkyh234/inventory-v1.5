@@ -204,7 +204,7 @@ export default function ReportsTab({
             className="bg-white border border-slate-250 rounded-lg px-3 py-1.5 text-xs text-slate-705 outline-none focus:ring-1 focus:ring-indigo-500"
           >
             {yearsList.map(yr => (
-              <option key={yr} value={yr}>{yr} Masehi</option>
+              <option key={yr} value={yr}>{yr}</option>
             ))}
           </select>
           {/* Month selector */}
