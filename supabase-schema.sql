@@ -1,29 +1,8 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import { createClient } from '@supabase/supabase-js';
-
-// Retrieve keys from environment variables or custom local storage connection
-export const getSupabaseConfig = () => {
-  const url = (import.meta as any).env?.VITE_SUPABASE_URL || localStorage.getItem('BASELAB_SUPABASE_URL') || '';
-  const anonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || localStorage.getItem('BASELAB_SUPABASE_ANON_KEY') || '';
-  return { url, anonKey };
-};
-
-const { url, anonKey } = getSupabaseConfig();
-
-// Initialize client if credential elements are provided. If blank, we fall back gracefully to localStorage state syncing.
-export const supabase = url && anonKey ? createClient(url, anonKey) : null;
-
-// Complete database schema for the current application. Keep this in sync with supabase-schema.sql.
-export const SUPABASE_SQL_SETUP = `-- Baselab Inventory System - Supabase schema
--- Safe to run again when tables already exist.
+-- Baselab Inventory System - Supabase schema
+-- Copy this entire file into Supabase SQL Editor and click Run.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 1. Create table for user settings
 CREATE TABLE IF NOT EXISTS user_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -32,7 +11,6 @@ CREATE TABLE IF NOT EXISTS user_settings (
   CONSTRAINT unique_user_settings UNIQUE(user_id)
 );
 
--- 2. Create table for expenses
 CREATE TABLE IF NOT EXISTS operating_expenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -43,7 +21,6 @@ CREATE TABLE IF NOT EXISTS operating_expenses (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Create table for consumables
 CREATE TABLE IF NOT EXISTS consumable_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -55,7 +32,6 @@ CREATE TABLE IF NOT EXISTS consumable_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Create table for filaments
 CREATE TABLE IF NOT EXISTS filament_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -67,7 +43,6 @@ CREATE TABLE IF NOT EXISTS filament_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Create table for product items
 CREATE TABLE IF NOT EXISTS product_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -79,7 +54,6 @@ CREATE TABLE IF NOT EXISTS product_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. Create table for sale transactions
 CREATE TABLE IF NOT EXISTS sales_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -102,20 +76,15 @@ CREATE TABLE IF NOT EXISTS sales_transactions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Latest multi-material columns for installations created from an older schema.
-ALTER TABLE sales_transactions
-  ADD COLUMN IF NOT EXISTS bahan_packing_items JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE sales_transactions
-  ADD COLUMN IF NOT EXISTS bahan_baku_items JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS bahan_packing_items JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS bahan_baku_items JSONB NOT NULL DEFAULT '[]'::jsonb;
 
--- Indexes used by dashboard period filters and per-user queries.
 CREATE INDEX IF NOT EXISTS idx_operating_expenses_user_date ON operating_expenses(user_id, tanggal DESC);
 CREATE INDEX IF NOT EXISTS idx_sales_transactions_user_date ON sales_transactions(user_id, tanggal DESC);
 CREATE INDEX IF NOT EXISTS idx_consumable_items_user ON consumable_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_filament_items_user ON filament_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_product_items_user ON product_items(user_id);
 
--- Row Level Security: every authenticated account can only access its own rows.
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE operating_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE consumable_items ENABLE ROW LEVEL SECURITY;
@@ -150,4 +119,3 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   product_items,
   sales_transactions
 TO authenticated;
-`;
