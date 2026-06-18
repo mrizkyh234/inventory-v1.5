@@ -116,7 +116,11 @@ export default function ReportsTab({
 
   // Total operational budgets
   const totalOperationalCosts = eFiltered.reduce((acc, curr) => {
-    return acc + curr.biayaEvent + curr.biayaTransportasi;
+    const equipmentCost = (curr.detailPerlengkapan || []).reduce(
+      (total, item) => total + (item.harga || 0),
+      0
+    );
+    return acc + curr.biayaEvent + curr.biayaTransportasi + equipmentCost;
   }, 0);
 
   // Grand Cash Outflow (HPP + platform fees + external logistics + operational event/travel rules)
@@ -128,57 +132,185 @@ export default function ReportsTab({
   const bebanBalikModal = labaTemp > 0 ? labaTemp * 0.5 : 0;
   const labaBersih = labaTemp - bebanBalikModal;
 
-  // CSV Exporter engine
-  const handleExportCSV = () => {
+  const handleExportPDF = async () => {
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable')
+    ]);
     const monthLabel = monthsList.find(m => m.value === filterMonth)?.label || 'Semua-Bulan';
-    const filename = `Laporan_Baselab_${filterYear}_${monthLabel.replace(/\s+/g, '_')}.csv`;
-
-    let csvContent = "data:text/csv;charset=utf-8,";
-    
-    // Title
-    csvContent += `LAPORAN KEUANGAN DAN OPERASIONAL BASELAB WORKSPACE\r\n`;
-    csvContent += `Periode: ${monthLabel} ${filterYear}\r\n`;
-    csvContent += `Diunduh pada: ${new Date().toLocaleDateString()}\r\n\r\n`;
-
-    // Metrik Utama
-    csvContent += `RINGKASAN METRIK UTAMA\r\n`;
-    csvContent += `Total Omset (Arus Kas Masuk),${totalOmsetInflow}\r\n`;
-    csvContent += `Total Pembayaran Lunas,${totalLunasInflow}\r\n`;
-    csvContent += `Total Piutang Pending,${totalPendingInflow}\r\n`;
-    csvContent += `Total Pengeluaran (Arus Kas Keluar),${totalCashOutflow}\r\n`;
-    csvContent += `Estimasi Laba Kotor,${labaKotor}\r\n`;
-    csvContent += `Estimasi Laba Bersih (Setelah Beban Balik Modal),${labaBersih}\r\n\r\n`;
-
-    // 1. Sales Logs Sheet
-    csvContent += `LOG PERSENTASE PENJUALAN PRODUK\r\n`;
-    csvContent += `Tanggal,Kode Invoice,Nama Produk,Qty Terjual,Harga Jual Satuan,Total Omset,Platform,Layanan Potongan,Margin Status,Status Transaksi\r\n`;
-    
-    sFiltered.forEach(sale => {
-      const p = products.find(prod => prod.id === sale.itemId);
-      const name = p ? p.sku : 'Produk Tidak Diketahui';
-      const rowTotal = sale.hargaJual * sale.qty;
-      csvContent += `"${sale.tanggal}","${sale.invoicePelanggan}","${name.replace(/"/g, '""')}",${sale.qty},${sale.hargaJual},${rowTotal},"${sale.platformName}",${sale.platformFeeValue},"${sale.status === 'lunas' ? 'LUNAS' : 'PENDING'}"\r\n`;
+    const filename = `Laporan_Baselab_${filterYear}_${monthLabel.replace(/\s+/g, '_')}.pdf`;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const generatedAt = new Date().toLocaleString('id-ID', {
+      dateStyle: 'long',
+      timeStyle: 'short'
     });
 
-    csvContent += `\r\n`;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, pageWidth, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(17);
+    doc.text('BASELAB INVENTORY SYSTEM', margin, 13);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text('Laporan Keuangan dan Operasional Workshop 3D Printing', margin, 20);
+    doc.text(`Periode: ${monthLabel} ${filterYear}`, pageWidth - margin, 13, { align: 'right' });
+    doc.text(`Dibuat: ${generatedAt}`, pageWidth - margin, 20, { align: 'right' });
 
-    // 2. Expenses Sheet
-    csvContent += `LOG OPERASIONAL KELUARAN (PENGELUARAN)\r\n`;
-    csvContent += `Tanggal,Biaya Event,Biaya Transportasi,Detail Item Pembelian,Total Biaya Sesi\r\n`;
-    
-    eFiltered.forEach(exp => {
-      const details = exp.detailPerlengkapan ? exp.detailPerlengkapan.map(d => `${d.nama} (${d.qty}pcs)`).join('; ') : '';
-      const totalSess = exp.biayaEvent + exp.biayaTransportasi;
-      csvContent += `"${exp.tanggal}",${exp.biayaEvent},${exp.biayaTransportasi},"${details.replace(/"/g, '""')}",${totalSess}\r\n`;
+    const summaryItems = [
+      { label: 'TOTAL OMZET', value: totalOmsetInflow, color: [8, 145, 178] },
+      { label: 'PEMBAYARAN LUNAS', value: totalLunasInflow, color: [5, 150, 105] },
+      { label: 'PIUTANG PENDING', value: totalPendingInflow, color: [217, 119, 6] },
+      { label: 'TOTAL PENGELUARAN', value: totalCashOutflow, color: [220, 38, 38] },
+      { label: 'LABA KOTOR', value: labaKotor, color: [79, 70, 229] },
+      { label: 'LABA BERSIH', value: labaBersih, color: labaBersih >= 0 ? [5, 150, 105] : [220, 38, 38] }
+    ];
+    const cardGap = 4;
+    const cardWidth = (pageWidth - (margin * 2) - (cardGap * 5)) / 6;
+
+    summaryItems.forEach((item, index) => {
+      const x = margin + index * (cardWidth + cardGap);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(x, 36, cardWidth, 24, 2, 2, 'FD');
+      doc.setFillColor(item.color[0], item.color[1], item.color[2]);
+      doc.rect(x, 36, 1.8, 24, 'F');
+      doc.setTextColor(100, 116, 139);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.text(item.label, x + 5, 43);
+      doc.setTextColor(item.color[0], item.color[1], item.color[2]);
+      doc.setFontSize(10);
+      doc.text(formatIDR(item.value), x + 5, 53);
     });
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Rincian Keuangan', margin, 69);
+
+    autoTable(doc, {
+      startY: 73,
+      margin: { left: margin, right: margin },
+      theme: 'grid',
+      head: [['Komponen', 'Nilai', 'Komponen', 'Nilai']],
+      body: [
+        ['HPP Produk', formatIDR(totalHPP), 'Biaya Platform', formatIDR(totalPlatformFees)],
+        ['Beban Operasional', formatIDR(totalOperationalCosts), 'Biaya Kurir/Lainnya', formatIDR(totalExtraOutExpenses)],
+        ['Laba Sebelum Balik Modal', formatIDR(labaTemp), 'Balik Modal (50%)', formatIDR(bebanBalikModal)]
+      ],
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 2.5, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] }
+    });
+
+    const inventoryY = (doc as typeof doc & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Ringkasan Persediaan', margin, inventoryY);
+    autoTable(doc, {
+      startY: inventoryY + 4,
+      margin: { left: margin, right: margin },
+      theme: 'striped',
+      head: [['Kategori', 'Jumlah Jenis', 'Total Stok', 'Nilai Persediaan']],
+      body: [
+        ['Produk Jadi', products.length, `${products.reduce((sum, item) => sum + item.stok, 0)} pcs`, formatIDR(products.reduce((sum, item) => sum + (item.hpp * item.stok), 0))],
+        ['Bahan Packing', consumables.length, `${consumables.reduce((sum, item) => sum + item.stok, 0)} pcs`, formatIDR(consumables.reduce((sum, item) => sum + (item.hargaBeliUnit * item.stok), 0))],
+        ['Bahan Baku', filaments.length, `${filaments.reduce((sum, item) => sum + item.stok, 0)} gram`, formatIDR(filaments.reduce((sum, item) => sum + (item.hargaBeliGrams * item.stok), 0))]
+      ],
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 2.5, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [8, 145, 178], textColor: 255, fontStyle: 'bold' }
+    });
+
+    doc.addPage();
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Riwayat Penjualan (${sFiltered.length} transaksi)`, margin, 18);
+    autoTable(doc, {
+      startY: 23,
+      margin: { left: margin, right: margin, bottom: 14 },
+      theme: 'striped',
+      head: [['Tanggal', 'Invoice / Pelanggan', 'Produk', 'Qty', 'Platform', 'Status', 'Harga Satuan', 'Total']],
+      body: sFiltered.map(sale => {
+        const product = products.find(item => item.id === sale.itemId);
+        return [
+          sale.tanggal,
+          sale.invoicePelanggan,
+          product?.sku || 'Produk tidak ditemukan',
+          `${sale.qty} pcs`,
+          sale.platformName,
+          sale.status === 'lunas' ? 'Lunas' : 'Pending',
+          formatIDR(sale.hargaJual),
+          formatIDR(sale.hargaJual * sale.qty)
+        ];
+      }),
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2.2, overflow: 'linebreak', textColor: [51, 65, 85] },
+      headStyles: { fillColor: [8, 145, 178], textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 21 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 57 },
+        3: { cellWidth: 16, halign: 'center' },
+        5: { cellWidth: 18, halign: 'center' },
+        6: { cellWidth: 29, halign: 'right' },
+        7: { cellWidth: 31, halign: 'right' }
+      }
+    });
+
+    doc.addPage();
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Beban Operasional (${eFiltered.length} catatan)`, margin, 18);
+    autoTable(doc, {
+      startY: 23,
+      margin: { left: margin, right: margin, bottom: 14 },
+      theme: 'striped',
+      head: [['Tanggal', 'Event', 'Transportasi', 'Detail Perlengkapan', 'Biaya Perlengkapan', 'Total']],
+      body: eFiltered.map(expense => {
+        const equipmentCost = (expense.detailPerlengkapan || []).reduce((sum, item) => sum + (item.harga || 0), 0);
+        const details = (expense.detailPerlengkapan || [])
+          .map(item => `${item.nama} (${item.qty} pcs)`)
+          .join(', ') || '-';
+        return [
+          expense.tanggal,
+          formatIDR(expense.biayaEvent),
+          formatIDR(expense.biayaTransportasi),
+          details,
+          formatIDR(equipmentCost),
+          formatIDR(expense.biayaEvent + expense.biayaTransportasi + equipmentCost)
+        ];
+      }),
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2.4, overflow: 'linebreak', textColor: [51, 65, 85] },
+      headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 32, halign: 'right' },
+        2: { cellWidth: 32, halign: 'right' },
+        3: { cellWidth: 91 },
+        4: { cellWidth: 38, halign: 'right' },
+        5: { cellWidth: 38, halign: 'right' }
+      }
+    });
+
+    const pageCount = doc.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page += 1) {
+      doc.setPage(page);
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, pageHeight - 9, pageWidth - margin, pageHeight - 9);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Baselab Inventory System - Dokumen dibuat otomatis', margin, pageHeight - 5);
+      doc.text(`Halaman ${page} dari ${pageCount}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
+    }
+
+    doc.save(filename);
   };
 
   return (
@@ -218,12 +350,12 @@ export default function ReportsTab({
             ))}
           </select>
 
-          {/* Direct CSV file downloader button */}
+          {/* Direct PDF downloader button */}
           <button
-            onClick={handleExportCSV}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+            onClick={handleExportPDF}
+            className="bg-red-600 hover:bg-red-500 text-white font-semibold text-xs px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
           >
-            <Download className="w-3.5 h-3.5" /> Ekspor ke Excel (CSV)
+            <Download className="w-3.5 h-3.5" /> Ekspor PDF
           </button>
         </div>
       </div>
@@ -340,7 +472,11 @@ export default function ReportsTab({
                         )}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap font-mono font-bold text-right text-red-600">
-                        {formatIDR(exp.biayaEvent + exp.biayaTransportasi)}
+                        {formatIDR(
+                          exp.biayaEvent +
+                          exp.biayaTransportasi +
+                          (exp.detailPerlengkapan || []).reduce((sum, item) => sum + (item.harga || 0), 0)
+                        )}
                       </td>
                     </tr>
                   ))}
