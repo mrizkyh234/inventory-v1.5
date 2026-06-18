@@ -1,0 +1,6 @@
+{
+  "name": "Baselab Workspace",
+  "description": "Dashboard manajemen keuangan dan operasional workshop cetak 3D Baselab Workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
