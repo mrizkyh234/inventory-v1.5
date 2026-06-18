@@ -47,7 +47,7 @@ export default function ReportsTab({
   const [filterYear, setFilterYear] = useState(currentYear);
   const [filterMonth, setFilterMonth] = useState('ALL'); // 'ALL' or '01' through '12'
 
-  const yearsList = ['2026', '2025', '2024'];
+  const yearsList = ['2030', '2029', '2028', '2027', '2026'];
   const monthsList = [
     { value: 'ALL', label: 'Semua Bulan' },
     { value: '01', label: 'Januari' },
