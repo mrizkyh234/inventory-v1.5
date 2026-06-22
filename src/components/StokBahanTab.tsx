@@ -16,9 +16,10 @@ import {
   Info, 
   Minus, 
   Database,
-  Grid
+  Grid,
+  Ban
 } from 'lucide-react';
-import { ConsumableItem, FilamentItem } from '../types';
+import { ConsumableItem, FilamentItem, MaterialRejectEntry } from '../types';
 import { formatIDR } from '../utils';
 
 interface StokBahanTabProps {
@@ -30,6 +31,7 @@ interface StokBahanTabProps {
   onAddFilament: (item: Omit<FilamentItem, 'id'>) => void;
   onUpdateFilament: (id: string, item: Omit<FilamentItem, 'id'>) => void;
   onDeleteFilament: (id: string) => void;
+  onAddMaterialReject: (entry: MaterialRejectEntry) => void;
 }
 
 export default function StokBahanTab({
@@ -41,6 +43,7 @@ export default function StokBahanTab({
   onAddFilament,
   onUpdateFilament,
   onDeleteFilament,
+  onAddMaterialReject,
 }: StokBahanTabProps) {
   // Navigation for active categorisations
   const [activeSubTab, setActiveSubTab] = useState<'sekali_pakai' | 'bahan_baku'>('sekali_pakai');
@@ -54,6 +57,12 @@ export default function StokBahanTab({
   const [stok, setStok] = useState('10');
   const [harga, setHarga] = useState('1500');
   const [minStok, setMinStok] = useState('5');
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [rejectTanggal, setRejectTanggal] = useState(new Date().toISOString().split('T')[0]);
+  const [rejectMaterialType, setRejectMaterialType] = useState<'sekali_pakai' | 'bahan_baku'>('sekali_pakai');
+  const [rejectMaterialId, setRejectMaterialId] = useState('');
+  const [rejectQty, setRejectQty] = useState('1');
+  const [rejectCatatan, setRejectCatatan] = useState('');
 
   const resetForm = () => {
     setNama('');
@@ -62,6 +71,15 @@ export default function StokBahanTab({
     setMinStok('5');
     setEditingId(null);
     setShowForm(false);
+  };
+
+  const resetRejectForm = () => {
+    setRejectTanggal(new Date().toISOString().split('T')[0]);
+    setRejectMaterialType(activeSubTab);
+    setRejectMaterialId('');
+    setRejectQty(activeSubTab === 'sekali_pakai' ? '1' : '10');
+    setRejectCatatan('');
+    setShowRejectForm(false);
   };
 
   const handleEditClick = (item: any) => {
@@ -113,6 +131,37 @@ export default function StokBahanTab({
     }
 
     resetForm();
+  };
+
+  const handleRejectSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const qtyVal = parseFloat(rejectQty);
+    const selectedMaterial = rejectMaterialType === 'sekali_pakai'
+      ? consumables.find(item => item.id === rejectMaterialId)
+      : filaments.find(item => item.id === rejectMaterialId);
+
+    if (!rejectMaterialId || !selectedMaterial) {
+      alert('Pilih bahan yang reject terlebih dahulu');
+      return;
+    }
+
+    if (isNaN(qtyVal) || qtyVal <= 0) {
+      alert('Jumlah reject harus lebih dari 0');
+      return;
+    }
+
+    if (qtyVal > selectedMaterial.stok && !confirm(`Stok ${selectedMaterial.nama} hanya ${selectedMaterial.stok}. Tetap catat reject ${qtyVal}?`)) {
+      return;
+    }
+
+    onAddMaterialReject({
+      tanggal: rejectTanggal,
+      materialType: rejectMaterialType,
+      materialId: rejectMaterialId,
+      qty: qtyVal,
+      catatan: rejectCatatan
+    });
+    resetRejectForm();
   };
 
   // Automated Alert indicators based on user boundaries:
@@ -175,20 +224,159 @@ export default function StokBahanTab({
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            if (showForm) {
-              resetForm();
-            } else {
-              setShowForm(true);
-            }
-          }}
-          className="bg-indigo-600 hover:bg-indigo-550 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-xs hover:-translate-y-0.5 cursor-pointer"
-        >
-          {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-          {showForm ? 'Kembali' : activeSubTab === 'sekali_pakai' ? 'Tambah Bahan Packing' : 'Tambah Bahan Baku'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => {
+              if (showRejectForm) {
+                resetRejectForm();
+              } else {
+                setRejectMaterialType(activeSubTab);
+                setRejectQty(activeSubTab === 'sekali_pakai' ? '1' : '10');
+                setShowRejectForm(true);
+                setShowForm(false);
+              }
+            }}
+            className="bg-red-600 hover:bg-red-500 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-xs hover:-translate-y-0.5 cursor-pointer"
+          >
+            {showRejectForm ? <X className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+            {showRejectForm ? 'Tutup Reject' : 'Catat Barang Reject'}
+          </button>
+          <button
+            onClick={() => {
+              if (showForm) {
+                resetForm();
+              } else {
+                setShowForm(true);
+                setShowRejectForm(false);
+              }
+            }}
+            className="bg-indigo-600 hover:bg-indigo-550 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2 shadow-xs hover:-translate-y-0.5 cursor-pointer"
+          >
+            {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {showForm ? 'Kembali' : activeSubTab === 'sekali_pakai' ? 'Tambah Bahan Packing' : 'Tambah Bahan Baku'}
+          </button>
+        </div>
       </div>
+
+      {showRejectForm && (
+        <div className="bg-white border border-red-100 rounded-2xl p-5 shadow-sm animate-fadeIn">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
+            <Ban className="w-4 h-4 text-red-600" />
+            Catat Barang Reject
+            <span className="text-[11px] font-bold px-2.5 py-0.5 bg-red-50 text-red-700 border border-red-100 rounded-lg">
+              Mengurangi stok & masuk pengeluaran
+            </span>
+          </h3>
+
+          <form onSubmit={handleRejectSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-500">Tanggal</label>
+              <input
+                type="date"
+                required
+                value={rejectTanggal}
+                onChange={(e) => setRejectTanggal(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-500">Jenis Bahan</label>
+              <select
+                value={rejectMaterialType}
+                onChange={(e) => {
+                  const nextType = e.target.value as 'sekali_pakai' | 'bahan_baku';
+                  setRejectMaterialType(nextType);
+                  setRejectMaterialId('');
+                  setRejectQty(nextType === 'sekali_pakai' ? '1' : '10');
+                }}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
+              >
+                <option value="sekali_pakai">Bahan Habis Pakai</option>
+                <option value="bahan_baku">Bahan Baku</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5 lg:col-span-2">
+              <label className="block text-xs font-semibold text-slate-500">Bahan Reject</label>
+              <select
+                required
+                value={rejectMaterialId}
+                onChange={(e) => setRejectMaterialId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
+              >
+                <option value="">Pilih bahan</option>
+                {(rejectMaterialType === 'sekali_pakai' ? consumables : filaments).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nama} - stok {item.stok}{rejectMaterialType === 'sekali_pakai' ? ' pcs' : ' g'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-500">
+                Jumlah ({rejectMaterialType === 'sekali_pakai' ? 'pcs' : 'gram'})
+              </label>
+              <input
+                type="number"
+                required
+                min="0"
+                step="any"
+                value={rejectQty}
+                onChange={(e) => setRejectQty(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-500">Nilai Reject</label>
+              <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-xs font-mono font-bold text-red-700">
+                {(() => {
+                  const selected = rejectMaterialType === 'sekali_pakai'
+                    ? consumables.find(item => item.id === rejectMaterialId)
+                    : filaments.find(item => item.id === rejectMaterialId);
+                  const qtyVal = parseFloat(rejectQty) || 0;
+                  const unitPrice = selected
+                    ? rejectMaterialType === 'sekali_pakai'
+                      ? (selected as ConsumableItem).hargaBeliUnit
+                      : (selected as FilamentItem).hargaBeliGrams
+                    : 0;
+                  return formatIDR(unitPrice * qtyVal);
+                })()}
+              </div>
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2 lg:col-span-4">
+              <label className="block text-xs font-semibold text-slate-500">Catatan</label>
+              <input
+                type="text"
+                placeholder="Contoh: gagal print, kusut, patah, kardus rusak"
+                value={rejectCatatan}
+                onChange={(e) => setRejectCatatan(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+            </div>
+
+            <div className="md:col-span-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={resetRejectForm}
+                className="px-4.5 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 border border-slate-200 rounded-xl transition-all cursor-pointer hover:bg-slate-50"
+              >
+                Batalkan
+              </button>
+              <button
+                type="submit"
+                className="bg-red-600 hover:bg-red-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                Catat Reject
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Form Section */}
       {showForm && (
@@ -396,6 +584,19 @@ export default function StokBahanTab({
                               <Edit className="w-4 h-4" />
                             </button>
                             <button
+                              onClick={() => {
+                                setRejectMaterialType('sekali_pakai');
+                                setRejectMaterialId(item.id);
+                                setRejectQty('1');
+                                setShowRejectForm(true);
+                                setShowForm(false);
+                              }}
+                              className="hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer"
+                              title="Catat reject"
+                            >
+                              <Ban className="w-4 h-4" />
+                            </button>
+                            <button
                               type="button"
                               onClick={() => setConsumableToDelete(item.id)}
                               className="hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer"
@@ -499,6 +700,19 @@ export default function StokBahanTab({
                               title="Edit"
                             >
                               <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejectMaterialType('bahan_baku');
+                                setRejectMaterialId(item.id);
+                                setRejectQty('10');
+                                setShowRejectForm(true);
+                                setShowForm(false);
+                              }}
+                              className="hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer"
+                              title="Catat reject"
+                            >
+                              <Ban className="w-4 h-4" />
                             </button>
                             <button
                               type="button"

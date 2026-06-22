@@ -35,7 +35,8 @@ import {
   ProductItem, 
   OperatingExpense, 
   SaleTransaction, 
-  PeriodType 
+  PeriodType,
+  MaterialRejectEntry
 } from './types';
 
 // Tab components
@@ -662,6 +663,83 @@ export default function App() {
     }
   };
 
+  const addMaterialRejectAction = async (entry: MaterialRejectEntry) => {
+    const isConsumable = entry.materialType === 'sekali_pakai';
+    const target = isConsumable
+      ? consumables.find(item => item.id === entry.materialId)
+      : filaments.find(item => item.id === entry.materialId);
+
+    if (!target) {
+      showToast('Bahan reject tidak ditemukan.', 'error');
+      return;
+    }
+
+    const rejectValue = isConsumable
+      ? (target as ConsumableItem).hargaBeliUnit * entry.qty
+      : (target as FilamentItem).hargaBeliGrams * entry.qty;
+    const unitLabel = isConsumable ? 'pcs' : 'g';
+    const note = entry.catatan?.trim();
+    const rejectDetail = {
+      nama: `Reject ${target.nama}${note ? ` - ${note}` : ''}`,
+      qty: entry.qty,
+      harga: rejectValue
+    };
+    const rejectExpenseId = crypto.randomUUID();
+    const rejectExpense: OperatingExpense = {
+      id: rejectExpenseId,
+      tanggal: entry.tanggal,
+      biayaEvent: 0,
+      biayaTransportasi: 0,
+      detailPerlengkapan: [rejectDetail]
+    };
+    const updatedExpenses = [rejectExpense, ...expenses];
+
+    const updatedConsumables = isConsumable
+      ? consumables.map(item => item.id === entry.materialId ? { ...item, stok: Math.max(0, item.stok - entry.qty) } : item)
+      : consumables;
+    const updatedFilaments = isConsumable
+      ? filaments
+      : filaments.map(item => item.id === entry.materialId ? { ...item, stok: Math.max(0, item.stok - entry.qty) } : item);
+
+    setConsumables(updatedConsumables);
+    setFilaments(updatedFilaments);
+    setExpenses(updatedExpenses);
+    saveLocalStateFallback(modalAwal, updatedConsumables, updatedFilaments, products, updatedExpenses, sales);
+
+    const uid = getUserId();
+    if (supabase && uid) {
+      try {
+        await supabase.from('operating_expenses').insert({
+          id: rejectExpenseId,
+          user_id: uid,
+          tanggal: rejectExpense.tanggal,
+          biaya_event: 0,
+          biaya_transportasi: 0,
+          detail_perlengkapan: rejectExpense.detailPerlengkapan
+        });
+
+        if (isConsumable) {
+          const updatedItem = updatedConsumables.find(item => item.id === entry.materialId);
+          if (updatedItem) {
+            await supabase.from('consumable_items').update({ stok: updatedItem.stok }).eq('id', entry.materialId);
+          }
+        } else {
+          const updatedItem = updatedFilaments.find(item => item.id === entry.materialId);
+          if (updatedItem) {
+            await supabase.from('filament_items').update({ stok: updatedItem.stok }).eq('id', entry.materialId);
+          }
+        }
+
+        showToast(`Reject ${entry.qty} ${unitLabel} dicatat & stok disinkronkan.`, 'success');
+      } catch (err) {
+        console.error(err);
+        showToast('Reject tersimpan lokal, tetapi gagal sinkron Supabase.', 'warning');
+      }
+    } else {
+      showToast(`Reject ${entry.qty} ${unitLabel} dicatat sebagai pengeluaran.`, 'success');
+    }
+  };
+
   // 5. STOK PRODUK CATALOGUE CRUD
   const addProductAction = async (item: Omit<ProductItem, 'id'>) => {
     const newId = crypto.randomUUID();
@@ -999,6 +1077,7 @@ export default function App() {
             onAddFilament={addFilamentAction}
             onUpdateFilament={updateFilamentAction}
             onDeleteFilament={deleteFilamentAction}
+            onAddMaterialReject={addMaterialRejectAction}
           />
         );
       case 'stok_produk':

@@ -54,6 +54,14 @@ export interface MaterialUsage {
   qty: number;
 }
 
+export interface MaterialRejectEntry {
+  tanggal: string;
+  materialType: 'sekali_pakai' | 'bahan_baku';
+  materialId: string;
+  qty: number;
+  catatan?: string;
+}
+
 export interface SaleTransaction {
   id: string;
   tanggal: string; // YYYY-MM-DD
