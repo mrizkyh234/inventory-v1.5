@@ -47,6 +47,7 @@ export default function BebanOperasionalTab({
   const [biayaEvent, setBiayaEvent] = useState('0');
   const [biayaTransportasi, setBiayaTransportasi] = useState('0');
   const [detailPerlengkapan, setDetailPerlengkapan] = useState<{ nama: string; qty: number; harga?: number }[]>([]);
+  const [jenis, setJenis] = useState<'operasional' | 'reject'>('operasional');
 
   // Temp detail states
   const [tempNama, setTempNama] = useState('');
@@ -144,6 +145,7 @@ export default function BebanOperasionalTab({
     setBiayaEvent('0');
     setBiayaTransportasi('0');
     setDetailPerlengkapan([]);
+    setJenis('operasional');
     setTempNama('');
     setTempQty('1');
     setTempHarga('0');
@@ -157,6 +159,7 @@ export default function BebanOperasionalTab({
     setBiayaEvent(expense.biayaEvent.toString());
     setBiayaTransportasi(expense.biayaTransportasi.toString());
     setDetailPerlengkapan(expense.detailPerlengkapan || []);
+    setJenis(expense.jenis || 'operasional');
     setShowForm(true);
   };
 
@@ -171,11 +174,14 @@ export default function BebanOperasionalTab({
       return;
     }
 
+    const existingExpense = editingId ? expenses.find(item => item.id === editingId) : undefined;
     const payload = {
       tanggal,
       biayaEvent: eventCost,
       biayaTransportasi: transportCost,
       detailPerlengkapan,
+      jenis,
+      rejectMeta: jenis === 'reject' ? existingExpense?.rejectMeta : undefined,
     };
 
     if (editingId) {
@@ -187,7 +193,11 @@ export default function BebanOperasionalTab({
     resetForm();
   };
 
-  const grandTotal = filteredExpenses.reduce((acc, curr) => acc + curr.biayaEvent + curr.biayaTransportasi, 0);
+  const getExpenseDetailTotal = (expense: OperatingExpense) => {
+    return (expense.detailPerlengkapan || []).reduce((sum, item) => sum + (item.harga || 0), 0);
+  };
+
+  const grandTotal = filteredExpenses.reduce((acc, curr) => acc + curr.biayaEvent + curr.biayaTransportasi + getExpenseDetailTotal(curr), 0);
 
   return (
     <div className="space-y-6">
@@ -318,7 +328,7 @@ export default function BebanOperasionalTab({
           </h3>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Date Input */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-slate-500">Tanggal Transaksi</label>
@@ -332,6 +342,18 @@ export default function BebanOperasionalTab({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-inner"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-500">Status Beban</label>
+                <select
+                  value={jenis}
+                  onChange={(e) => setJenis(e.target.value as 'operasional' | 'reject')}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-inner"
+                >
+                  <option value="operasional">Operasional</option>
+                  <option value="reject">Reject</option>
+                </select>
               </div>
 
               {/* Event Fee */}
@@ -524,6 +546,7 @@ export default function BebanOperasionalTab({
               <thead className="bg-slate-50 text-slate-500 text-left font-semibold">
                 <tr>
                   <th className="px-5 py-3.5">Tanggal</th>
+                  <th className="px-5 py-3.5">Status</th>
                   <th className="px-5 py-3.5">Biaya Event</th>
                   <th className="px-5 py-3.5">Biaya Transportasi</th>
                   <th className="px-5 py-3.5">Detail Perlengkapan Habis Pakai</th>
@@ -538,6 +561,15 @@ export default function BebanOperasionalTab({
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
                         {expense.tanggal}
                       </div>
+                    </td>
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                        expense.jenis === 'reject'
+                          ? 'bg-red-50 border-red-200 text-red-700'
+                          : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                      }`}>
+                        {expense.jenis === 'reject' ? 'Reject' : 'Operasional'}
+                      </span>
                     </td>
                     <td className="px-5 py-4 whitespace-nowrap font-mono text-indigo-650 font-semibold">
                       {formatIDR(expense.biayaEvent)}

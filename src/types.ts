@@ -45,6 +45,8 @@ export interface OperatingExpense {
   biayaEvent: number;
   biayaTransportasi: number;
   detailPerlengkapan: { nama: string; qty: number; harga?: number }[]; // array of consumable items bought
+  jenis?: 'operasional' | 'reject';
+  rejectMeta?: MaterialRejectEntry;
   created_at?: string;
   user_id?: string;
 }

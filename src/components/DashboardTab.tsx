@@ -137,8 +137,21 @@ export default function DashboardTab({
   // 1. Calculate Omset (Total Pendapatan Penjualan)
   const omset = filteredSales.reduce((acc, curr) => acc + (curr.hargaJual * curr.qty), 0);
 
-  // 2. Calculate HPP (Total HPP of products sold)
-  const totalHPP = filteredSales.reduce((acc, curr) => {
+  const platformFees = filteredSales.reduce((acc, curr) => {
+    const totalSale = curr.hargaJual * curr.qty;
+    let fee = 0;
+    if (curr.platformFeeType === 'persen') {
+      fee = (totalSale * curr.platformFeeValue) / 100;
+    } else {
+      fee = curr.platformFeeValue;
+    }
+    return acc + fee;
+  }, 0);
+
+  const extraOutExpenses = filteredSales.reduce((acc, curr) => acc + (curr.biayaOperasionalLuar || 0), 0);
+
+  // 2. Calculate HPP total: product HPP + packing usage + courier/other + platform admin
+  const productAndPackingHPP = filteredSales.reduce((acc, curr) => {
     const associatedProduct = products.find(p => p.id === curr.itemId);
     const hppValue = associatedProduct ? associatedProduct.hpp : 0;
     const packingUsages = curr.bahanPackingItems?.length
@@ -153,6 +166,8 @@ export default function DashboardTab({
 
     return acc + (hppValue * curr.qty) + packingHPP;
   }, 0);
+
+  const totalHPP = productAndPackingHPP + platformFees + extraOutExpenses;
 
   // 3. Calculate Laba Kotor (Omset - HPP)
   const labaKotor = omset - totalHPP;
@@ -183,21 +198,8 @@ export default function DashboardTab({
   // 8. Laba Bersih (Laba Temp - 50% beban balik modal)
   const labaBersih = labaTemp - bebanBalikModal;
 
-  // 9. Total Pengeluaran (HPP + Operational + Platform Admin fees + Other pickup delivery fees)
-  const platformFees = filteredSales.reduce((acc, curr) => {
-    const totalSale = curr.hargaJual * curr.qty;
-    let fee = 0;
-    if (curr.platformFeeType === 'persen') {
-      fee = (totalSale * curr.platformFeeValue) / 100;
-    } else {
-      fee = curr.platformFeeValue;
-    }
-    return acc + fee;
-  }, 0);
-
-  const extraOutExpenses = filteredSales.reduce((acc, curr) => acc + (curr.biayaOperasionalLuar || 0), 0);
-  
-  const totalPengeluaran = totalHPP + opExpensesTotal + platformFees + extraOutExpenses;
+  // 9. Total Pengeluaran (HPP total + Operational)
+  const totalPengeluaran = totalHPP + opExpensesTotal;
 
   // 10. Top 10 Sales by Products
   const salesByProduct: { [sku: string]: { qty: number; total: number } } = {};
@@ -234,9 +236,8 @@ export default function DashboardTab({
   ];
 
   const breakdownPieData = [
-    { name: 'HPP Produk', value: totalHPP, fill: '#f87171' }, // Red-400
+    { name: 'HPP Total', value: totalHPP, fill: '#f87171' }, // Red-400
     { name: 'Beban Operasional', value: opExpensesTotal, fill: '#fb923c' }, // Orange-400
-    { name: 'Admin Platform & Eksternal', value: platformFees + extraOutExpenses, fill: '#a78bfa' }, // Purple-400
     { name: 'Laba Bersih Tetap', value: Math.max(0, labaBersih), fill: '#34d399' }, // Green-400
     { name: 'Uang Balik Modal (50%)', value: Math.max(0, totalReturnedCapital), fill: '#60a5fa' }, // Blue-400
   ].filter(item => item.value > 0);

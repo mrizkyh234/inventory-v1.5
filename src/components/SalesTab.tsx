@@ -57,7 +57,7 @@ export default function SalesTab({
   const [qty, setQty] = useState('1');
   const [hargaJual, setHargaJual] = useState('0');
   const [hargaJualManual, setHargaJualManual] = useState(false);
-  const [targetMarginPercent, setTargetMarginPercent] = useState('50');
+  const [targetMarginPercent, setTargetMarginPercent] = useState('0');
   
   // Fulfillment components
   const [bahanPackingItems, setBahanPackingItems] = useState<{ itemId: string; qty: string }[]>([
@@ -91,10 +91,10 @@ export default function SalesTab({
   const suggestedHargaJualUnit = qtyVal > 0 ? (suggestedTotalPrice * targetMarginMultiplier) / qtyVal : 0;
 
   useEffect(() => {
-    if (!editingId && !hargaJualManual) {
+    if (!hargaJualManual) {
       setHargaJual(Math.ceil(suggestedHargaJualUnit).toString());
     }
-  }, [editingId, hargaJualManual, suggestedHargaJualUnit]);
+  }, [hargaJualManual, suggestedHargaJualUnit]);
 
   const resetForm = () => {
     setTanggal(new Date().toISOString().split('T')[0]);
@@ -103,7 +103,7 @@ export default function SalesTab({
     setQty('1');
     setHargaJual('0');
     setHargaJualManual(false);
-    setTargetMarginPercent('50');
+    setTargetMarginPercent('0');
     setBahanPackingItems([{ itemId: '', qty: '0' }]);
     setBiayaOperasionalLuar('0');
     setPlatformName('Shopee');
@@ -122,7 +122,7 @@ export default function SalesTab({
     setQty(sale.qty.toString());
     setHargaJual(sale.hargaJual.toString());
     setHargaJualManual(true);
-    setTargetMarginPercent('50');
+    setTargetMarginPercent('0');
     const packingItems = sale.bahanPackingItems?.length
       ? sale.bahanPackingItems
       : sale.bahanPackingId
@@ -530,7 +530,7 @@ export default function SalesTab({
                     }}
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
-                    {[25, 50, 75, 100, 125, 150, 200].map((percent) => (
+                    {[0, 25, 50, 75, 100, 125, 150, 200].map((percent) => (
                       <option key={percent} value={percent.toString()}>{percent}%</option>
                     ))}
                   </select>

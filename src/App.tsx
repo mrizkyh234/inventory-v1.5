@@ -366,7 +366,9 @@ export default function App() {
           tanggal: e.tanggal,
           biayaEvent: Number(e.biaya_event),
           biayaTransportasi: Number(e.biaya_transportasi),
-          detailPerlengkapan: e.detail_perlengkapan || []
+          detailPerlengkapan: e.detail_perlengkapan || [],
+          jenis: (e.jenis || 'operasional') as 'operasional' | 'reject',
+          rejectMeta: e.reject_meta || undefined
         })));
       }
 
@@ -488,7 +490,9 @@ export default function App() {
           tanggal: item.tanggal,
           biaya_event: item.biayaEvent,
           biaya_transportasi: item.biayaTransportasi,
-          detail_perlengkapan: item.detailPerlengkapan
+          detail_perlengkapan: item.detailPerlengkapan,
+          jenis: item.jenis || 'operasional',
+          reject_meta: item.rejectMeta || null
         });
         showToast('Pengeluaran berhasil disimpan online!', 'success');
       } catch (err) {
@@ -511,7 +515,9 @@ export default function App() {
           tanggal: item.tanggal,
           biaya_event: item.biayaEvent,
           biaya_transportasi: item.biayaTransportasi,
-          detail_perlengkapan: item.detailPerlengkapan
+          detail_perlengkapan: item.detailPerlengkapan,
+          jenis: item.jenis || 'operasional',
+          reject_meta: item.rejectMeta || null
         }).eq('id', id);
         showToast('Pengeluaran diperbarui online!', 'success');
       } catch (err) {
@@ -523,13 +529,38 @@ export default function App() {
   };
 
   const deleteExpenseAction = async (id: string) => {
+    const targetExpense = expenses.find(e => e.id === id);
     const updated = expenses.filter(e => e.id !== id);
+    let updatedConsumables = consumables;
+    let updatedFilaments = filaments;
+
+    if (targetExpense?.jenis === 'reject' && targetExpense.rejectMeta) {
+      const { materialType, materialId, qty } = targetExpense.rejectMeta;
+      if (materialType === 'sekali_pakai') {
+        updatedConsumables = consumables.map(item => item.id === materialId ? { ...item, stok: item.stok + qty } : item);
+      } else {
+        updatedFilaments = filaments.map(item => item.id === materialId ? { ...item, stok: item.stok + qty } : item);
+      }
+      setConsumables(updatedConsumables);
+      setFilaments(updatedFilaments);
+    }
+
     setExpenses(updated);
-    saveLocalStateFallback(modalAwal, consumables, filaments, products, updated, sales);
+    saveLocalStateFallback(modalAwal, updatedConsumables, updatedFilaments, products, updated, sales);
 
     if (supabase && getUserId()) {
       try {
         await supabase.from('operating_expenses').delete().eq('id', id);
+        if (targetExpense?.jenis === 'reject' && targetExpense.rejectMeta) {
+          const { materialType, materialId } = targetExpense.rejectMeta;
+          if (materialType === 'sekali_pakai') {
+            const updatedItem = updatedConsumables.find(item => item.id === materialId);
+            if (updatedItem) await supabase.from('consumable_items').update({ stok: updatedItem.stok }).eq('id', materialId);
+          } else {
+            const updatedItem = updatedFilaments.find(item => item.id === materialId);
+            if (updatedItem) await supabase.from('filament_items').update({ stok: updatedItem.stok }).eq('id', materialId);
+          }
+        }
         showToast('Pengeluaran terhapus online!', 'success');
       } catch (err) {
         showToast('Terhapus lokal.', 'warning');
@@ -690,7 +721,9 @@ export default function App() {
       tanggal: entry.tanggal,
       biayaEvent: 0,
       biayaTransportasi: 0,
-      detailPerlengkapan: [rejectDetail]
+      detailPerlengkapan: [rejectDetail],
+      jenis: 'reject',
+      rejectMeta: entry
     };
     const updatedExpenses = [rejectExpense, ...expenses];
 
@@ -715,7 +748,9 @@ export default function App() {
           tanggal: rejectExpense.tanggal,
           biaya_event: 0,
           biaya_transportasi: 0,
-          detail_perlengkapan: rejectExpense.detailPerlengkapan
+          detail_perlengkapan: rejectExpense.detailPerlengkapan,
+          jenis: 'reject',
+          reject_meta: entry
         });
 
         if (isConsumable) {
@@ -741,12 +776,50 @@ export default function App() {
   };
 
   // 5. STOK PRODUK CATALOGUE CRUD
+  const reconcileProductMaterialStock = (
+    baseFilaments: FilamentItem[],
+    previousProduct?: ProductItem,
+    nextProduct?: ProductItem
+  ) => {
+    const filamentDeltas = new Map<string, number>();
+
+    const addDelta = (id: string, amount: number) => {
+      filamentDeltas.set(id, (filamentDeltas.get(id) || 0) + amount);
+    };
+
+    previousProduct?.bahanBakuItems?.forEach(usage => {
+      addDelta(usage.itemId, usage.qty * previousProduct.stok);
+    });
+
+    nextProduct?.bahanBakuItems?.forEach(usage => {
+      addDelta(usage.itemId, -(usage.qty * nextProduct.stok));
+    });
+
+    return baseFilaments.map(filament => {
+      const delta = filamentDeltas.get(filament.id) || 0;
+      return delta === 0 ? filament : { ...filament, stok: Math.max(0, filament.stok + delta) };
+    });
+  };
+
+  const syncFilamentStockChangesOnline = async (updatedFilaments: FilamentItem[], originalFilaments: FilamentItem[]) => {
+    if (!supabase || !getUserId()) return;
+
+    await Promise.all(updatedFilaments.map(async filament => {
+      const original = originalFilaments.find(item => item.id === filament.id);
+      if (original && original.stok !== filament.stok) {
+        await supabase.from('filament_items').update({ stok: filament.stok }).eq('id', filament.id);
+      }
+    }));
+  };
+
   const addProductAction = async (item: Omit<ProductItem, 'id'>) => {
     const newId = crypto.randomUUID();
     const newItem: ProductItem = { id: newId, ...item };
     const updated = [...products, newItem];
+    const updatedFilaments = reconcileProductMaterialStock(filaments, undefined, newItem);
     setProducts(updated);
-    saveLocalStateFallback(modalAwal, consumables, filaments, updated, expenses, sales);
+    setFilaments(updatedFilaments);
+    saveLocalStateFallback(modalAwal, consumables, updatedFilaments, updated, expenses, sales);
 
     const uid = getUserId();
     if (supabase && uid) {
@@ -761,6 +834,7 @@ export default function App() {
           harga_jual: item.hargaJual,
           bahan_baku_items: item.bahanBakuItems || []
         });
+        await syncFilamentStockChangesOnline(updatedFilaments, filaments);
         showToast('Produk baru berhasil didaftarkan!', 'success');
       } catch (err) {
         console.error(err);
@@ -771,9 +845,13 @@ export default function App() {
   };
 
   const updateProductAction = async (id: string, item: Omit<ProductItem, 'id'>) => {
+    const previousProduct = products.find(p => p.id === id);
+    const nextProduct: ProductItem = { id, ...item };
     const updated = products.map(p => p.id === id ? { ...p, ...item } : p);
+    const updatedFilaments = reconcileProductMaterialStock(filaments, previousProduct, nextProduct);
     setProducts(updated);
-    saveLocalStateFallback(modalAwal, consumables, filaments, updated, expenses, sales);
+    setFilaments(updatedFilaments);
+    saveLocalStateFallback(modalAwal, consumables, updatedFilaments, updated, expenses, sales);
 
     if (supabase && getUserId()) {
       try {
@@ -785,6 +863,7 @@ export default function App() {
           harga_jual: item.hargaJual,
           bahan_baku_items: item.bahanBakuItems || []
         }).eq('id', id);
+        await syncFilamentStockChangesOnline(updatedFilaments, filaments);
       } catch (err) {
         console.error(err);
       }
@@ -792,13 +871,17 @@ export default function App() {
   };
 
   const deleteProductAction = async (id: string) => {
+    const previousProduct = products.find(p => p.id === id);
     const updated = products.filter(p => p.id !== id);
+    const updatedFilaments = reconcileProductMaterialStock(filaments, previousProduct, undefined);
     setProducts(updated);
-    saveLocalStateFallback(modalAwal, consumables, filaments, updated, expenses, sales);
+    setFilaments(updatedFilaments);
+    saveLocalStateFallback(modalAwal, consumables, updatedFilaments, updated, expenses, sales);
 
     if (supabase && getUserId()) {
       try {
         await supabase.from('product_items').delete().eq('id', id);
+        await syncFilamentStockChangesOnline(updatedFilaments, filaments);
       } catch (err) {
         console.error(err);
       }

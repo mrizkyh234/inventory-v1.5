@@ -27,8 +27,13 @@ CREATE TABLE IF NOT EXISTS operating_expenses (
   biaya_event NUMERIC NOT NULL DEFAULT 0 CHECK (biaya_event >= 0),
   biaya_transportasi NUMERIC NOT NULL DEFAULT 0 CHECK (biaya_transportasi >= 0),
   detail_perlengkapan JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(detail_perlengkapan) = 'array'),
+  jenis TEXT NOT NULL DEFAULT 'operasional' CHECK (jenis IN ('operasional', 'reject')),
+  reject_meta JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE operating_expenses ADD COLUMN IF NOT EXISTS jenis TEXT NOT NULL DEFAULT 'operasional';
+ALTER TABLE operating_expenses ADD COLUMN IF NOT EXISTS reject_meta JSONB;
 
 CREATE TABLE IF NOT EXISTS consumable_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
