@@ -34,6 +34,7 @@ export interface ProductItem {
   stok: number;
   hpp: number; // cost price (bahan baku + packing)
   hargaJual: number;
+  bahanBakuItems?: MaterialUsage[]; // filament/other raw materials used per product unit
   created_at?: string;
   user_id?: string;
 }

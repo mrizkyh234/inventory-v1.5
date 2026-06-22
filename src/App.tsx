@@ -347,7 +347,10 @@ export default function App() {
           sku: p.sku,
           stok: Number(p.stok),
           hpp: Number(p.hpp),
-          hargaJual: Number(p.harga_jual)
+          hargaJual: Number(p.harga_jual),
+          bahanBakuItems: Array.isArray(p.bahan_baku_items)
+            ? p.bahan_baku_items.map((item: any) => ({ itemId: item.itemId, qty: Number(item.qty || 0) }))
+            : []
         })));
       }
 
@@ -677,7 +680,8 @@ export default function App() {
           sku: item.sku,
           stok: item.stok,
           hpp: item.hpp,
-          harga_jual: item.hargaJual
+          harga_jual: item.hargaJual,
+          bahan_baku_items: item.bahanBakuItems || []
         });
         showToast('Produk baru berhasil didaftarkan!', 'success');
       } catch (err) {
@@ -700,7 +704,8 @@ export default function App() {
           sku: item.sku,
           stok: item.stok,
           hpp: item.hpp,
-          harga_jual: item.hargaJual
+          harga_jual: item.hargaJual,
+          bahan_baku_items: item.bahanBakuItems || []
         }).eq('id', id);
       } catch (err) {
         console.error(err);
@@ -975,6 +980,7 @@ export default function App() {
         return (
           <StokProdukTab
             products={products}
+            filaments={filaments}
             onAddProduct={addProductAction}
             onUpdateProduct={updateProductAction}
             onDeleteProduct={deleteProductAction}

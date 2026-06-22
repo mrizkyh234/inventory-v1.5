@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS product_items (
   stok NUMERIC NOT NULL DEFAULT 0 CHECK (stok >= 0),
   hpp NUMERIC NOT NULL DEFAULT 0 CHECK (hpp >= 0),
   harga_jual NUMERIC NOT NULL DEFAULT 0 CHECK (harga_jual >= 0),
+  bahan_baku_items JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(bahan_baku_items) = 'array'),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -113,6 +114,9 @@ CREATE TABLE IF NOT EXISTS sales_transactions (
 );
 
 -- Latest multi-material columns for installations created from an older schema.
+ALTER TABLE product_items
+  ADD COLUMN IF NOT EXISTS bahan_baku_items JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 ALTER TABLE sales_transactions
   ADD COLUMN IF NOT EXISTS bahan_packing_items JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE sales_transactions

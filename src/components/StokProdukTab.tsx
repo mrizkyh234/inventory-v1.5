@@ -16,13 +16,15 @@ import {
   Image as ImageIcon,
   Camera,
   Percent,
-  Minus
+  Minus,
+  Layers
 } from 'lucide-react';
-import { ProductItem } from '../types';
+import { FilamentItem, MaterialUsage, ProductItem } from '../types';
 import { formatIDR } from '../utils';
 
 interface StokProdukTabProps {
   products: ProductItem[];
+  filaments: FilamentItem[];
   onAddProduct: (product: Omit<ProductItem, 'id'>) => void;
   onUpdateProduct: (id: string, product: Omit<ProductItem, 'id'>) => void;
   onDeleteProduct: (id: string) => void;
@@ -30,6 +32,7 @@ interface StokProdukTabProps {
 
 export default function StokProdukTab({
   products,
+  filaments,
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
@@ -45,6 +48,21 @@ export default function StokProdukTab({
   const [hpp, setHpp] = useState('12000');
   const [hargaJual, setHargaJual] = useState('25000');
   const [foto, setFoto] = useState(''); // Base64 or Preset Url
+  const [bahanBakuItems, setBahanBakuItems] = useState<{ itemId: string; qty: string }[]>([
+    { itemId: '', qty: '0' }
+  ]);
+
+  const normalizedBahanBakuItems = bahanBakuItems
+    .map((item) => ({ itemId: item.itemId, qty: parseFloat(item.qty) || 0 }))
+    .filter((item) => item.itemId && item.qty > 0);
+
+  const calculatedBahanBakuHpp = normalizedBahanBakuItems.reduce((total, item) => {
+    const bahan = filaments.find((filament) => filament.id === item.itemId);
+    return total + ((bahan?.hargaBeliGrams || 0) * item.qty);
+  }, 0);
+
+  const isUsingBahanBakuCalculation = normalizedBahanBakuItems.length > 0;
+  const effectiveHpp = isUsingBahanBakuCalculation ? calculatedBahanBakuHpp : (parseFloat(hpp) || 0);
 
   const resetForm = () => {
     setSku('');
@@ -52,6 +70,7 @@ export default function StokProdukTab({
     setHpp('12000');
     setHargaJual('25000');
     setFoto('');
+    setBahanBakuItems([{ itemId: '', qty: '0' }]);
     setEditingId(null);
     setShowForm(false);
   };
@@ -63,6 +82,10 @@ export default function StokProdukTab({
     setHpp(product.hpp.toString());
     setHargaJual(product.hargaJual.toString());
     setFoto(product.foto || '');
+    setBahanBakuItems(product.bahanBakuItems?.length
+      ? product.bahanBakuItems.map((item) => ({ itemId: item.itemId, qty: item.qty.toString() }))
+      : [{ itemId: '', qty: '0' }]
+    );
     setShowForm(true);
   };
 
@@ -81,7 +104,7 @@ export default function StokProdukTab({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const stockVal = parseInt(stok);
-    const hppVal = parseFloat(hpp);
+    const hppVal = isUsingBahanBakuCalculation ? calculatedBahanBakuHpp : parseFloat(hpp);
     const sellVal = parseFloat(hargaJual);
 
     if (isNaN(stockVal) || isNaN(hppVal) || isNaN(sellVal)) {
@@ -95,6 +118,7 @@ export default function StokProdukTab({
       hpp: hppVal,
       hargaJual: sellVal,
       foto: foto || 'gradient_placeholder', // Fallback to custom generator
+      bahanBakuItems: normalizedBahanBakuItems as MaterialUsage[],
     };
 
     if (editingId) {
@@ -251,17 +275,83 @@ export default function StokProdukTab({
                   />
                 </div>
 
+                <div className="space-y-2 sm:col-span-2 bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                      Bahan Baku Produk
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setBahanBakuItems([...bahanBakuItems, { itemId: '', qty: '0' }])}
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-white border border-indigo-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Tambah Bahan
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {bahanBakuItems.map((item, index) => {
+                      const selectedBahan = filaments.find((filament) => filament.id === item.itemId);
+                      const rowQty = parseFloat(item.qty) || 0;
+                      const rowCost = selectedBahan ? selectedBahan.hargaBeliGrams * rowQty : 0;
+
+                      return (
+                        <div key={`product-bahan-${index}`} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                          <select
+                            value={item.itemId}
+                            onChange={(e) => setBahanBakuItems(bahanBakuItems.map((row, rowIndex) => rowIndex === index ? { ...row, itemId: e.target.value } : row))}
+                            className="sm:col-span-6 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            <option value="">Pilih bahan baku</option>
+                            {filaments.map((filament) => (
+                              <option key={filament.id} value={filament.id}>
+                                {filament.nama} - {formatIDR(filament.hargaBeliGrams)}/g
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            placeholder="Gram"
+                            value={item.qty}
+                            onChange={(e) => setBahanBakuItems(bahanBakuItems.map((row, rowIndex) => rowIndex === index ? { ...row, qty: e.target.value } : row))}
+                            className="sm:col-span-3 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          <div className="sm:col-span-2 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 flex items-center justify-end">
+                            {formatIDR(rowCost)}
+                          </div>
+                          <button
+                            type="button"
+                            title="Hapus bahan baku"
+                            onClick={() => setBahanBakuItems(bahanBakuItems.length === 1 ? [{ itemId: '', qty: '0' }] : bahanBakuItems.filter((_, rowIndex) => rowIndex !== index))}
+                            className="sm:col-span-1 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors flex items-center justify-center p-2 cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-505">Harga Pokok Produksi - HPP (IDR)</label>
+                  <label className="block text-xs font-semibold text-slate-505">
+                    Harga Pokok Produksi - HPP (IDR)
+                    {isUsingBahanBakuCalculation && <span className="ml-1 text-indigo-600">otomatis</span>}
+                  </label>
                   <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:bg-white focus-within:ring-1 focus-within:ring-indigo-505 transition-all">
                     <span className="text-xs text-slate-400 font-bold mr-1">Rp</span>
                     <input
                       type="number"
                       required
                       min="0"
-                      value={hpp}
+                      value={isUsingBahanBakuCalculation ? Math.round(calculatedBahanBakuHpp).toString() : hpp}
+                      readOnly={isUsingBahanBakuCalculation}
                       onChange={(e) => setHpp(e.target.value)}
-                      className="w-full bg-transparent text-slate-800 font-mono text-xs focus:outline-none"
+                      className="w-full bg-transparent text-slate-800 font-mono text-xs focus:outline-none read-only:text-indigo-700"
                     />
                   </div>
                 </div>
@@ -287,9 +377,8 @@ export default function StokProdukTab({
                     <TrendingUp className="w-3 h-3 text-cyan-600" /> Live Potensi Margin
                   </span>
                   {(() => {
-                    const hVal = parseFloat(hpp) || 0;
                     const jVal = parseFloat(hargaJual) || 0;
-                    const marginValue = jVal - hVal;
+                    const marginValue = jVal - effectiveHpp;
                     const marginPercent = jVal > 0 ? (marginValue / jVal) * 100 : 0;
                     return (
                       <div className="mt-1 flex items-baseline justify-between">
@@ -371,7 +460,14 @@ export default function StokProdukTab({
                         </div>
                       </td>
                       <td className="px-5 py-3 font-mono text-slate-500 font-semibold">
-                        {formatIDR(item.hpp)}
+                        <div className="flex flex-col">
+                          <span>{formatIDR(item.hpp)}</span>
+                          {item.bahanBakuItems?.length ? (
+                            <span className="text-[10px] font-sans text-slate-400 font-semibold mt-0.5">
+                              {item.bahanBakuItems.length} bahan baku
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-5 py-3 font-mono text-cyan-705 font-bold">
                         {formatIDR(item.hargaJual)}
