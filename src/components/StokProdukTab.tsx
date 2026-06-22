@@ -434,18 +434,13 @@ export default function StokProdukTab({
                 <tr>
                   <th className="px-5 py-3.5">Foto</th>
                   <th className="px-5 py-3.5">SKU / Nama Produk</th>
-                  <th className="px-5 py-3.5">HPP (Modal)</th>
-                  <th className="px-5 py-3.5">Harga Jual</th>
-                  <th className="px-5 py-3.5">Potensi Margin IDR (%)</th>
+                  <th className="px-5 py-3.5">HPP</th>
                   <th className="px-5 py-3.5 text-center">Koreksi Stok Manual</th>
                   <th className="px-5 py-3.5 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-600">
                 {products.map((item) => {
-                  const potMargin = item.hargaJual - item.hpp;
-                  const potMarginPercent = item.hargaJual > 0 ? (potMargin / item.hargaJual) * 100 : 0;
-                  
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/40 transition-colors">
                       <td className="px-5 py-3">
@@ -467,15 +462,6 @@ export default function StokProdukTab({
                               {item.bahanBakuItems.length} bahan baku
                             </span>
                           ) : null}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 font-mono text-cyan-705 font-bold">
-                        {formatIDR(item.hargaJual)}
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex flex-col">
-                          <span className="font-mono font-bold text-emerald-600">+{formatIDR(potMargin)}</span>
-                          <span className="text-[10px] font-mono text-slate-400 font-semibold">({potMarginPercent.toFixed(1)}%)</span>
                         </div>
                       </td>
                       <td className="px-5 py-3">

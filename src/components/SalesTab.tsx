@@ -57,6 +57,7 @@ export default function SalesTab({
   const [qty, setQty] = useState('1');
   const [hargaJual, setHargaJual] = useState('0');
   const [hargaJualManual, setHargaJualManual] = useState(false);
+  const [targetMarginPercent, setTargetMarginPercent] = useState('50');
   
   // Fulfillment components
   const [bahanPackingItems, setBahanPackingItems] = useState<{ itemId: string; qty: string }[]>([
@@ -86,7 +87,8 @@ export default function SalesTab({
   const suggestedTotalPrice = platformFeeType === 'persen'
     ? baseCostTotal / Math.max(0.01, 1 - (platformValue / 100))
     : baseCostTotal + platformValue;
-  const suggestedHargaJualUnit = qtyVal > 0 ? suggestedTotalPrice / qtyVal : 0;
+  const targetMarginMultiplier = 1 + ((parseFloat(targetMarginPercent) || 0) / 100);
+  const suggestedHargaJualUnit = qtyVal > 0 ? (suggestedTotalPrice * targetMarginMultiplier) / qtyVal : 0;
 
   useEffect(() => {
     if (!editingId && !hargaJualManual) {
@@ -101,6 +103,7 @@ export default function SalesTab({
     setQty('1');
     setHargaJual('0');
     setHargaJualManual(false);
+    setTargetMarginPercent('50');
     setBahanPackingItems([{ itemId: '', qty: '0' }]);
     setBiayaOperasionalLuar('0');
     setPlatformName('Shopee');
@@ -119,6 +122,7 @@ export default function SalesTab({
     setQty(sale.qty.toString());
     setHargaJual(sale.hargaJual.toString());
     setHargaJualManual(true);
+    setTargetMarginPercent('50');
     const packingItems = sale.bahanPackingItems?.length
       ? sale.bahanPackingItems
       : sale.bahanPackingId
@@ -516,6 +520,21 @@ export default function SalesTab({
 
               {/* LIVE MARGIN CALCULATOR PREVIEW */}
               <div className="flex flex-col sm:flex-row sm:items-end gap-4 w-full sm:w-auto">
+                <div className="space-y-1.5 min-w-[150px]">
+                  <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-bold">Margin Target</label>
+                  <select
+                    value={targetMarginPercent}
+                    onChange={(e) => {
+                      setTargetMarginPercent(e.target.value);
+                      setHargaJualManual(false);
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    {[25, 50, 75, 100, 125, 150, 200].map((percent) => (
+                      <option key={percent} value={percent.toString()}>{percent}%</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="space-y-1.5 min-w-[190px]">
                   <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-bold">Harga Jual / Unit</label>
                   <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
@@ -555,7 +574,7 @@ export default function SalesTab({
                     </span>
                   </div>
                   <span className="text-[9px] text-slate-500 block">
-                    Auto: {formatIDR(Math.ceil(suggestedHargaJualUnit))} / unit | Omset: {formatIDR(liveStats.totalOmset)} | HPP: {formatIDR(liveStats.totalHPP)} | Admin: {formatIDR(liveStats.feeAmount)}
+                    Auto {targetMarginPercent}%: {formatIDR(Math.ceil(suggestedHargaJualUnit))} / unit | Omset: {formatIDR(liveStats.totalOmset)} | HPP: {formatIDR(liveStats.totalHPP)} | Admin: {formatIDR(liveStats.feeAmount)}
                   </span>
                 </div>
               </div>
