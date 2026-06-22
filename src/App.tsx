@@ -992,7 +992,6 @@ export default function App() {
             sales={sales}
             products={products}
             consumables={consumables}
-            filaments={filaments}
             onAddSale={addSaleAction}
             onUpdateSale={updateSaleAction}
             onDeleteSale={deleteSaleAction}

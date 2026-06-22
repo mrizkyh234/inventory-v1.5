@@ -19,22 +19,21 @@ import {
   Info,
   Clock,
   Layers,
-  Sparkles
+  Sparkles,
+  RotateCcw
 } from 'lucide-react';
 import { 
   ProductItem, 
   ConsumableItem, 
-  FilamentItem, 
   SaleTransaction,
   MaterialUsage
 } from '../types';
-import { formatIDR, getPlatformFeeAmount, getMarginDetails } from '../utils';
+import { formatIDR, getPlatformFeeAmount } from '../utils';
 
 interface SalesTabProps {
   sales: SaleTransaction[];
   products: ProductItem[];
   consumables: ConsumableItem[];
-  filaments: FilamentItem[];
   onAddSale: (sale: Omit<SaleTransaction, 'id'>) => void;
   onUpdateSale: (id: string, sale: Omit<SaleTransaction, 'id'>) => void;
   onDeleteSale: (id: string) => void;
@@ -44,7 +43,6 @@ export default function SalesTab({
   sales,
   products,
   consumables,
-  filaments,
   onAddSale,
   onUpdateSale,
   onDeleteSale,
@@ -58,12 +56,10 @@ export default function SalesTab({
   const [itemId, setItemId] = useState('');
   const [qty, setQty] = useState('1');
   const [hargaJual, setHargaJual] = useState('0');
+  const [hargaJualManual, setHargaJualManual] = useState(false);
   
   // Fulfillment components
   const [bahanPackingItems, setBahanPackingItems] = useState<{ itemId: string; qty: string }[]>([
-    { itemId: '', qty: '0' }
-  ]);
-  const [bahanBakuItems, setBahanBakuItems] = useState<{ itemId: string; qty: string }[]>([
     { itemId: '', qty: '0' }
   ]);
 
@@ -74,15 +70,29 @@ export default function SalesTab({
   const [platformFeeValue, setPlatformFeeValue] = useState('0');
   const [status, setStatus] = useState<'lunas' | 'pending'>('lunas');
 
-  // Load product custom retail defaults when selection edits
+  const selectedProduct = products.find(p => p.id === itemId);
+  const qtyVal = parseInt(qty) || 0;
+  const hppUnit = selectedProduct?.hpp || 0;
+  const normalizedPackingItems: MaterialUsage[] = bahanPackingItems
+    .filter(item => item.itemId && parseFloat(item.qty) > 0)
+    .map(item => ({ itemId: item.itemId, qty: parseFloat(item.qty) }));
+  const packingTotalCost = normalizedPackingItems.reduce((total, item) => {
+    const packing = consumables.find(c => c.id === item.itemId);
+    return total + ((packing?.hargaBeliUnit || 0) * item.qty);
+  }, 0);
+  const extraCost = parseFloat(biayaOperasionalLuar) || 0;
+  const platformValue = parseFloat(platformFeeValue) || 0;
+  const baseCostTotal = (hppUnit * qtyVal) + packingTotalCost + extraCost;
+  const suggestedTotalPrice = platformFeeType === 'persen'
+    ? baseCostTotal / Math.max(0.01, 1 - (platformValue / 100))
+    : baseCostTotal + platformValue;
+  const suggestedHargaJualUnit = qtyVal > 0 ? suggestedTotalPrice / qtyVal : 0;
+
   useEffect(() => {
-    if (itemId) {
-      const selectedProduct = products.find(p => p.id === itemId);
-      if (selectedProduct && !editingId) {
-        setHargaJual(selectedProduct.hargaJual.toString());
-      }
+    if (!editingId && !hargaJualManual) {
+      setHargaJual(Math.ceil(suggestedHargaJualUnit).toString());
     }
-  }, [itemId, products, editingId]);
+  }, [editingId, hargaJualManual, suggestedHargaJualUnit]);
 
   const resetForm = () => {
     setTanggal(new Date().toISOString().split('T')[0]);
@@ -90,8 +100,8 @@ export default function SalesTab({
     setItemId('');
     setQty('1');
     setHargaJual('0');
+    setHargaJualManual(false);
     setBahanPackingItems([{ itemId: '', qty: '0' }]);
-    setBahanBakuItems([{ itemId: '', qty: '0' }]);
     setBiayaOperasionalLuar('0');
     setPlatformName('Shopee');
     setPlatformFeeType('persen');
@@ -108,18 +118,13 @@ export default function SalesTab({
     setItemId(sale.itemId);
     setQty(sale.qty.toString());
     setHargaJual(sale.hargaJual.toString());
+    setHargaJualManual(true);
     const packingItems = sale.bahanPackingItems?.length
       ? sale.bahanPackingItems
       : sale.bahanPackingId
         ? [{ itemId: sale.bahanPackingId, qty: sale.bahanPackingQty || 0 }]
         : [];
-    const bakuItems = sale.bahanBakuItems?.length
-      ? sale.bahanBakuItems
-      : sale.bahanBakuId
-        ? [{ itemId: sale.bahanBakuId, qty: sale.bahanBakuQtyGrams || 0 }]
-        : [];
     setBahanPackingItems(packingItems.length ? packingItems.map(item => ({ itemId: item.itemId, qty: item.qty.toString() })) : [{ itemId: '', qty: '0' }]);
-    setBahanBakuItems(bakuItems.length ? bakuItems.map(item => ({ itemId: item.itemId, qty: item.qty.toString() })) : [{ itemId: '', qty: '0' }]);
     setBiayaOperasionalLuar((sale.biayaOperasionalLuar || 0).toString());
     setPlatformName(sale.platformName);
     setPlatformFeeType(sale.platformFeeType);
@@ -141,13 +146,6 @@ export default function SalesTab({
     const extraExp = parseFloat(biayaOperasionalLuar);
     const feeVal = parseFloat(platformFeeValue);
 
-    const normalizedPackingItems: MaterialUsage[] = bahanPackingItems
-      .filter(item => item.itemId && parseFloat(item.qty) > 0)
-      .map(item => ({ itemId: item.itemId, qty: parseFloat(item.qty) }));
-    const normalizedBakuItems: MaterialUsage[] = bahanBakuItems
-      .filter(item => item.itemId && parseFloat(item.qty) > 0)
-      .map(item => ({ itemId: item.itemId, qty: parseFloat(item.qty) }));
-
     if (
       isNaN(qtyVal) || qtyVal <= 0 ||
       isNaN(hargaVal) ||
@@ -166,10 +164,10 @@ export default function SalesTab({
       hargaJual: hargaVal,
       bahanPackingId: normalizedPackingItems[0]?.itemId || '',
       bahanPackingQty: normalizedPackingItems[0]?.qty || 0,
-      bahanBakuId: normalizedBakuItems[0]?.itemId || '',
-      bahanBakuQtyGrams: normalizedBakuItems[0]?.qty || 0,
+      bahanBakuId: '',
+      bahanBakuQtyGrams: 0,
       bahanPackingItems: normalizedPackingItems,
-      bahanBakuItems: normalizedBakuItems,
+      bahanBakuItems: [],
       biayaOperasionalLuar: extraExp,
       platformName,
       platformFeeType,
@@ -181,7 +179,6 @@ export default function SalesTab({
       onUpdateSale(editingId, payload);
     } else {
       // Alert potential packaging/filament issues
-      const selectedProduct = products.find(p => p.id === itemId);
       if (selectedProduct && selectedProduct.stok < qtyVal) {
         if (!confirm(`Perhatian: Stok produk '${selectedProduct.sku}' hanya ${selectedProduct.stok} pcs (pesanan: ${qtyVal} pcs). Tetap lanjutkan?`)) {
           return;
@@ -198,9 +195,6 @@ export default function SalesTab({
     const defaultRes = { totalOmset: 0, totalHPP: 0, feeAmount: 0, extra: 0, marginRupiah: 0, marginPercent: 0 };
     if (!itemId) return defaultRes;
 
-    const selectedProduct = products.find(p => p.id === itemId);
-    const hppSingle = selectedProduct ? selectedProduct.hpp : 0;
-    
     const qtyVal = parseInt(qty) || 0;
     const priceVal = parseFloat(hargaJual) || 0;
     const extraVal = parseFloat(biayaOperasionalLuar) || 0;
@@ -208,24 +202,14 @@ export default function SalesTab({
 
     const totalOmset = priceVal * qtyVal;
     
-    // Add packaging or filament materials cost into total live HPP
-    let materialHPP = hppSingle * qtyVal;
+    // Product HPP already includes raw material. Sales only adds disposable packing cost.
+    let materialHPP = hppUnit * qtyVal;
     
-    // Custom consumables HPP adjustment
     bahanPackingItems.forEach(item => {
       const itemQty = parseFloat(item.qty) || 0;
       const packingMat = consumables.find(c => c.id === item.itemId);
       if (packingMat) {
         materialHPP += packingMat.hargaBeliUnit * itemQty;
-      }
-    });
-
-    // Custom filament HPP adjustment
-    bahanBakuItems.forEach(item => {
-      const itemQty = parseFloat(item.qty) || 0;
-      const filamentMat = filaments.find(f => f.id === item.itemId);
-      if (filamentMat) {
-        materialHPP += filamentMat.hargaBeliGrams * itemQty;
       }
     });
 
@@ -326,7 +310,10 @@ export default function SalesTab({
                 <select
                   required
                   value={itemId}
-                  onChange={(e) => setItemId(e.target.value)}
+                  onChange={(e) => {
+                    setItemId(e.target.value);
+                    setHargaJualManual(false);
+                  }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 >
                   <option value="">-- Pilih Katalog Siap Jual --</option>
@@ -351,30 +338,30 @@ export default function SalesTab({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-500">Harga Jual / Unit</label>
-                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 focus-within:bg-white focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
+                  <label className="block text-xs font-semibold text-slate-500">HPP Produk / Unit</label>
+                  <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-2">
                     <span className="text-[10px] text-slate-400 font-bold mr-1">Rp</span>
                     <input
                       type="number"
                       required
                       min="0"
-                      value={hargaJual}
-                      onChange={(e) => setHargaJual(e.target.value)}
-                      className="w-full bg-transparent text-slate-800 font-mono text-xs focus:outline-none"
+                      value={Math.round(hppUnit).toString()}
+                      readOnly
+                      className="w-full bg-transparent text-slate-700 font-mono text-xs focus:outline-none"
                     />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* FULFILLMENT: Packing wrap & raw filaments logs */}
+            {/* FULFILLMENT: Packing material logs */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4.5 space-y-3">
               <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 pb-2 border-b border-slate-150">
                 <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                Pemakaian Bahan Jadi & Baku (Fulfillment / Packing Pengiriman)
+                Pemakaian Bahan Habis Pakai (Packing Pengiriman)
               </span>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-[11px] font-semibold text-slate-500">Bahan Packaging</label>
@@ -412,51 +399,6 @@ export default function SalesTab({
                         type="button"
                         title="Hapus bahan packing"
                         onClick={() => setBahanPackingItems(bahanPackingItems.length === 1 ? [{ itemId: '', qty: '0' }] : bahanPackingItems.filter((_, rowIndex) => rowIndex !== index))}
-                        className="flex items-center justify-center text-slate-400 hover:text-red-600 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-semibold text-slate-500">Bahan Baku Filament</label>
-                    <button
-                      type="button"
-                      onClick={() => setBahanBakuItems([...bahanBakuItems, { itemId: '', qty: '0' }])}
-                      className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Tambah Bahan
-                    </button>
-                  </div>
-                  {bahanBakuItems.map((item, index) => (
-                    <div key={index} className="grid grid-cols-[minmax(0,1fr)_90px_30px] gap-2">
-                      <select
-                        value={item.itemId}
-                        onChange={(e) => setBahanBakuItems(bahanBakuItems.map((row, rowIndex) => rowIndex === index ? { ...row, itemId: e.target.value } : row))}
-                        className="min-w-0 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      >
-                        <option value="">-- Pilih Filament --</option>
-                        {filaments.map(f => (
-                          <option key={f.id} value={f.id}>{f.nama} (stok: {f.stok} gr)</option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        aria-label="Gramasi filament"
-                        value={item.qty}
-                        onChange={(e) => setBahanBakuItems(bahanBakuItems.map((row, rowIndex) => rowIndex === index ? { ...row, qty: e.target.value } : row))}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        placeholder="Gram"
-                      />
-                      <button
-                        type="button"
-                        title="Hapus bahan baku"
-                        onClick={() => setBahanBakuItems(bahanBakuItems.length === 1 ? [{ itemId: '', qty: '0' }] : bahanBakuItems.filter((_, rowIndex) => rowIndex !== index))}
                         className="flex items-center justify-center text-slate-400 hover:text-red-600 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -566,7 +508,35 @@ export default function SalesTab({
               </div>
 
               {/* LIVE MARGIN CALCULATOR PREVIEW */}
-              <div className="text-right flex items-center gap-6">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4 w-full sm:w-auto">
+                <div className="space-y-1.5 min-w-[190px]">
+                  <label className="block text-[10px] text-slate-400 uppercase tracking-widest font-bold">Harga Jual / Unit</label>
+                  <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
+                    <span className="text-xs text-slate-400 font-bold mr-1">Rp</span>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={hargaJual}
+                      onChange={(e) => {
+                        setHargaJualManual(true);
+                        setHargaJual(e.target.value);
+                      }}
+                      className="w-full bg-transparent text-slate-800 font-mono text-xs focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      title="Gunakan harga otomatis"
+                      onClick={() => {
+                        setHargaJualManual(false);
+                        setHargaJual(Math.ceil(suggestedHargaJualUnit).toString());
+                      }}
+                      className="ml-2 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold">Kalkulator Margin Live</span>
                   <div className="flex items-baseline gap-2.5 mt-0.5 justify-end">
@@ -577,7 +547,9 @@ export default function SalesTab({
                       {liveStats.marginPercent.toFixed(1)}%
                     </span>
                   </div>
-                  <span className="text-[9px] text-slate-500 block">Omset: {formatIDR(liveStats.totalOmset)} | HPP: {formatIDR(liveStats.totalHPP)} | Admin: {formatIDR(liveStats.feeAmount)}</span>
+                  <span className="text-[9px] text-slate-500 block">
+                    Auto: {formatIDR(Math.ceil(suggestedHargaJualUnit))} / unit | Omset: {formatIDR(liveStats.totalOmset)} | HPP: {formatIDR(liveStats.totalHPP)} | Admin: {formatIDR(liveStats.feeAmount)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -639,7 +611,7 @@ export default function SalesTab({
                   const prodName = targetProd ? targetProd.sku : 'Model Tidak Terjangkau / Dihapus';
                   const defaultHPP = targetProd ? targetProd.hpp : 0;
                   
-                  // Compute HPP including explicit materials
+                  // Compute HPP from finished product plus disposable packing materials.
                   let totalProdHPP = defaultHPP * sale.qty;
                   
                   const packingUsages = sale.bahanPackingItems?.length
@@ -650,16 +622,6 @@ export default function SalesTab({
                   packingUsages.forEach(usage => {
                     const packing = consumables.find(c => c.id === usage.itemId);
                     if (packing) totalProdHPP += packing.hargaBeliUnit * usage.qty;
-                  });
-
-                  const bakuUsages = sale.bahanBakuItems?.length
-                    ? sale.bahanBakuItems
-                    : sale.bahanBakuId
-                      ? [{ itemId: sale.bahanBakuId, qty: sale.bahanBakuQtyGrams }]
-                      : [];
-                  bakuUsages.forEach(usage => {
-                    const filament = filaments.find(f => f.id === usage.itemId);
-                    if (filament) totalProdHPP += filament.hargaBeliGrams * usage.qty;
                   });
 
                   const totalOmset = sale.hargaJual * sale.qty;
