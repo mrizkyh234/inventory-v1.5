@@ -728,59 +728,89 @@ export default function App() {
   };
 
   // 6. SALES TRANSACTIONS CRUD (With trigger for automatic stock reductions)
+  const getSalePackingUsages = (sale: Pick<SaleTransaction, 'bahanPackingItems' | 'bahanPackingId' | 'bahanPackingQty'>) => {
+    return sale.bahanPackingItems?.length
+      ? sale.bahanPackingItems
+      : sale.bahanPackingId
+        ? [{ itemId: sale.bahanPackingId, qty: sale.bahanPackingQty }]
+        : [];
+  };
+
+  const reconcileSaleStock = (
+    baseProducts: ProductItem[],
+    baseConsumables: ConsumableItem[],
+    previousSale?: SaleTransaction,
+    nextSale?: SaleTransaction
+  ) => {
+    const productDeltas = new Map<string, number>();
+    const consumableDeltas = new Map<string, number>();
+
+    const addProductDelta = (id: string, amount: number) => {
+      productDeltas.set(id, (productDeltas.get(id) || 0) + amount);
+    };
+
+    const addConsumableDelta = (id: string, amount: number) => {
+      consumableDeltas.set(id, (consumableDeltas.get(id) || 0) + amount);
+    };
+
+    if (previousSale?.status === 'lunas') {
+      addProductDelta(previousSale.itemId, previousSale.qty);
+      getSalePackingUsages(previousSale).forEach(usage => addConsumableDelta(usage.itemId, usage.qty));
+    }
+
+    if (nextSale?.status === 'lunas') {
+      addProductDelta(nextSale.itemId, -nextSale.qty);
+      getSalePackingUsages(nextSale).forEach(usage => addConsumableDelta(usage.itemId, -usage.qty));
+    }
+
+    return {
+      products: baseProducts.map(product => {
+        const delta = productDeltas.get(product.id) || 0;
+        return delta === 0 ? product : { ...product, stok: Math.max(0, product.stok + delta) };
+      }),
+      consumables: baseConsumables.map(consumable => {
+        const delta = consumableDeltas.get(consumable.id) || 0;
+        return delta === 0 ? consumable : { ...consumable, stok: Math.max(0, consumable.stok + delta) };
+      })
+    };
+  };
+
+  const syncStockChangesOnline = async (
+    updatedProducts: ProductItem[],
+    updatedConsumables: ConsumableItem[],
+    originalProducts: ProductItem[],
+    originalConsumables: ConsumableItem[]
+  ) => {
+    if (!supabase || !getUserId()) return;
+
+    await Promise.all(updatedProducts.map(async product => {
+      const original = originalProducts.find(item => item.id === product.id);
+      if (original && original.stok !== product.stok) {
+        await supabase.from('product_items').update({ stok: product.stok }).eq('id', product.id);
+      }
+    }));
+
+    await Promise.all(updatedConsumables.map(async consumable => {
+      const original = originalConsumables.find(item => item.id === consumable.id);
+      if (original && original.stok !== consumable.stok) {
+        await supabase.from('consumable_items').update({ stok: consumable.stok }).eq('id', consumable.id);
+      }
+    }));
+  };
+
   const addSaleAction = async (item: Omit<SaleTransaction, 'id'>) => {
     const newId = crypto.randomUUID();
     const newSale: SaleTransaction = { id: newId, ...item };
     const updatedSales = [newSale, ...sales];
 
-    // AUTOMATIC STOCK REDUCTION IF 'lunas':
-    // Deduct products, packaging consumables, and filament grams
-    let updatedProds = [...products];
-    let updatedCons = [...consumables];
-    let updatedFils = [...filaments];
-    const packingUsages = item.bahanPackingItems?.length
-      ? item.bahanPackingItems
-      : item.bahanPackingId
-        ? [{ itemId: item.bahanPackingId, qty: item.bahanPackingQty }]
-        : [];
-    const bakuUsages = item.bahanBakuItems?.length
-      ? item.bahanBakuItems
-      : item.bahanBakuId
-        ? [{ itemId: item.bahanBakuId, qty: item.bahanBakuQtyGrams }]
-        : [];
-
-    if (item.status === 'lunas') {
-      // 1. Deduct Product catalog Stock
-      updatedProds = products.map(p => {
-        if (p.id === item.itemId) {
-          return { ...p, stok: Math.max(0, p.stok - item.qty) };
-        }
-        return p;
-      });
-
-      // 2. Deduct packing wrap
-      updatedCons = consumables.map(c => {
-        const totalUsed = packingUsages
-          .filter(usage => usage.itemId === c.id)
-          .reduce((total, usage) => total + usage.qty, 0);
-        return totalUsed > 0 ? { ...c, stok: Math.max(0, c.stok - totalUsed) } : c;
-      });
-
-      // 3. Deduct filament weight grams
-      updatedFils = filaments.map(f => {
-        const totalUsed = bakuUsages
-          .filter(usage => usage.itemId === f.id)
-          .reduce((total, usage) => total + usage.qty, 0);
-        return totalUsed > 0 ? { ...f, stok: Math.max(0, f.stok - totalUsed) } : f;
-      });
-    }
+    const { products: updatedProds, consumables: updatedCons } = reconcileSaleStock(products, consumables, undefined, newSale);
+    const packingUsages = getSalePackingUsages(newSale);
 
     setSales(updatedSales);
     setProducts(updatedProds);
     setConsumables(updatedCons);
-    setFilaments(updatedFils);
     
-    saveLocalStateFallback(modalAwal, updatedCons, updatedFils, updatedProds, expenses, updatedSales);
+    saveLocalStateFallback(modalAwal, updatedCons, filaments, updatedProds, expenses, updatedSales);
 
     // Parallel offline / online execution
     const uid = getUserId();
@@ -798,9 +828,9 @@ export default function App() {
           bahan_packing_id: item.bahanPackingId || null,
           bahan_packing_qty: item.bahanPackingQty,
           bahan_packing_items: packingUsages,
-          bahan_baku_id: item.bahanBakuId || null,
-          bahan_baku_qty_grams: item.bahanBakuQtyGrams,
-          bahan_baku_items: bakuUsages,
+          bahan_baku_id: null,
+          bahan_baku_qty_grams: 0,
+          bahan_baku_items: [],
           biaya_operasional_luar: item.biayaOperasionalLuar,
           platform_name: item.platformName,
           platform_fee_type: item.platformFeeType,
@@ -808,25 +838,7 @@ export default function App() {
           status: item.status
         });
 
-        // Parallel update stock online
-        if (item.status === 'lunas') {
-          const matchedProd = products.find(p => p.id === item.itemId);
-          if (matchedProd) {
-            await supabase.from('product_items').update({ stok: Math.max(0, matchedProd.stok - item.qty) }).eq('id', item.itemId);
-          }
-          await Promise.all(updatedCons.map(async material => {
-            const original = consumables.find(c => c.id === material.id);
-            if (original && original.stok !== material.stok) {
-              await supabase.from('consumable_items').update({ stok: material.stok }).eq('id', material.id);
-            }
-          }));
-          await Promise.all(updatedFils.map(async material => {
-            const original = filaments.find(f => f.id === material.id);
-            if (original && original.stok !== material.stok) {
-              await supabase.from('filament_items').update({ stok: material.stok }).eq('id', material.id);
-            }
-          }));
-        }
+        await syncStockChangesOnline(updatedProds, updatedCons, products, consumables);
 
         showToast('Transaksi tercatat & disinkronisasi online!', 'success');
       } catch (err) {
@@ -838,10 +850,15 @@ export default function App() {
   };
 
   const updateSaleAction = async (id: string, item: Omit<SaleTransaction, 'id'>) => {
-    // If updating transaction, we compute what is modified. Simple complete sync.
+    const previousSale = sales.find(s => s.id === id);
+    const nextSale: SaleTransaction = { id, ...item };
     const updatedSales = sales.map(s => s.id === id ? { ...s, ...item } : s);
+    const { products: updatedProds, consumables: updatedCons } = reconcileSaleStock(products, consumables, previousSale, nextSale);
+
     setSales(updatedSales);
-    saveLocalStateFallback(modalAwal, consumables, filaments, products, expenses, updatedSales);
+    setProducts(updatedProds);
+    setConsumables(updatedCons);
+    saveLocalStateFallback(modalAwal, updatedCons, filaments, updatedProds, expenses, updatedSales);
 
     const uid = getUserId();
     if (supabase && uid) {
@@ -855,15 +872,16 @@ export default function App() {
           bahan_packing_id: item.bahanPackingId || null,
           bahan_packing_qty: item.bahanPackingQty,
           bahan_packing_items: item.bahanPackingItems || [],
-          bahan_baku_id: item.bahanBakuId || null,
-          bahan_baku_qty_grams: item.bahanBakuQtyGrams,
-          bahan_baku_items: item.bahanBakuItems || [],
+          bahan_baku_id: null,
+          bahan_baku_qty_grams: 0,
+          bahan_baku_items: [],
           biaya_operasional_luar: item.biayaOperasionalLuar,
           platform_name: item.platformName,
           platform_fee_type: item.platformFeeType,
           platform_fee_value: item.platformFeeValue,
           status: item.status
         }).eq('id', id);
+        await syncStockChangesOnline(updatedProds, updatedCons, products, consumables);
         showToast('Transaksi diperbarui online!', 'success');
       } catch (err) {
         console.error(err);
@@ -874,13 +892,19 @@ export default function App() {
   };
 
   const deleteSaleAction = async (id: string) => {
+    const deletedSale = sales.find(s => s.id === id);
     const updatedSales = sales.filter(s => s.id !== id);
+    const { products: updatedProds, consumables: updatedCons } = reconcileSaleStock(products, consumables, deletedSale, undefined);
+
     setSales(updatedSales);
-    saveLocalStateFallback(modalAwal, consumables, filaments, products, expenses, updatedSales);
+    setProducts(updatedProds);
+    setConsumables(updatedCons);
+    saveLocalStateFallback(modalAwal, updatedCons, filaments, updatedProds, expenses, updatedSales);
 
     if (supabase && getUserId()) {
       try {
         await supabase.from('sales_transactions').delete().eq('id', id);
+        await syncStockChangesOnline(updatedProds, updatedCons, products, consumables);
         showToast('Penjualan terhapus online!', 'success');
       } catch (err) {
         console.error(err);
@@ -946,6 +970,7 @@ export default function App() {
             modalAwal={modalAwal}
             onUpdateModalAwal={updateModalAwalAction}
             expenses={expenses}
+            consumables={consumables}
             products={products}
             sales={sales}
             selectedPeriod={selectedPeriod}
@@ -1309,7 +1334,7 @@ export default function App() {
               }`}
             >
               <Package className="w-4 h-4 shrink-0" />
-              <span>Gudang Stok Bahan</span>
+              <span>Stok Bahan</span>
             </button>
 
             <button
@@ -1333,7 +1358,7 @@ export default function App() {
               }`}
             >
               <TrendingUp className="w-4 h-4 shrink-0" />
-              <span>Sirkulasi Penjualan</span>
+              <span>Penjualan</span>
             </button>
 
             <button

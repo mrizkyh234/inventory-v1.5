@@ -168,7 +168,7 @@ export default function StokBahanTab({
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <Package className="w-5 h-5 text-indigo-600" />
-            Gudang & Stok Bahan Baselab
+            Stok Bahan Baselab
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Pantau ketersediaan bahan pengemasan (sekali pakai) serta stok utama Filament PLA/PETG. Dilengkapi indikator kelayakan batas minimum.

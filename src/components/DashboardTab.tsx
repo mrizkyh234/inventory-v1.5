@@ -31,6 +31,7 @@ import {
   Legend 
 } from 'recharts';
 import { 
+  ConsumableItem,
   ProductItem, 
   OperatingExpense, 
   SaleTransaction, 
@@ -42,6 +43,7 @@ interface DashboardTabProps {
   modalAwal: number;
   onUpdateModalAwal: (value: number) => void;
   expenses: OperatingExpense[];
+  consumables: ConsumableItem[];
   products: ProductItem[];
   sales: SaleTransaction[];
   selectedPeriod: PeriodType;
@@ -52,6 +54,7 @@ export default function DashboardTab({
   modalAwal,
   onUpdateModalAwal,
   expenses,
+  consumables,
   products,
   sales,
   selectedPeriod,
@@ -128,7 +131,7 @@ export default function DashboardTab({
     });
   };
 
-  const filteredSales = filterByPeriod(sales);
+  const filteredSales = filterByPeriod(sales).filter(sale => sale.status === 'lunas');
   const filteredExpenses = filterByPeriod(expenses);
 
   // 1. Calculate Omset (Total Pendapatan Penjualan)
@@ -138,7 +141,17 @@ export default function DashboardTab({
   const totalHPP = filteredSales.reduce((acc, curr) => {
     const associatedProduct = products.find(p => p.id === curr.itemId);
     const hppValue = associatedProduct ? associatedProduct.hpp : 0;
-    return acc + (hppValue * curr.qty);
+    const packingUsages = curr.bahanPackingItems?.length
+      ? curr.bahanPackingItems
+      : curr.bahanPackingId
+        ? [{ itemId: curr.bahanPackingId, qty: curr.bahanPackingQty }]
+        : [];
+    const packingHPP = packingUsages.reduce((total, usage) => {
+      const packing = consumables.find(item => item.id === usage.itemId);
+      return total + ((packing?.hargaBeliUnit || 0) * usage.qty);
+    }, 0);
+
+    return acc + (hppValue * curr.qty) + packingHPP;
   }, 0);
 
   // 3. Calculate Laba Kotor (Omset - HPP)

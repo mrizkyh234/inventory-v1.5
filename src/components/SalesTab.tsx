@@ -245,7 +245,7 @@ export default function SalesTab({
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-indigo-600 animate-pulse" />
-            Pencatatan Penjualan (Sales)
+            Penjualan
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Input seluruh rincian transaksi pembeli dan pesanan e-commerce. Dilengkapi kalkulator HPP logistik kemasan & platform admin-fees otomatis.
@@ -374,7 +374,7 @@ export default function SalesTab({
                     </button>
                   </div>
                   {bahanPackingItems.map((item, index) => (
-                    <div key={index} className="grid grid-cols-[minmax(0,1fr)_90px_30px] gap-2">
+                    <div key={index} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_90px_110px_30px] gap-2">
                       <select
                         value={item.itemId}
                         onChange={(e) => setBahanPackingItems(bahanPackingItems.map((row, rowIndex) => rowIndex === index ? { ...row, itemId: e.target.value } : row))}
@@ -395,6 +395,13 @@ export default function SalesTab({
                         className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         placeholder="Pcs"
                       />
+                      <div className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-right text-xs font-mono font-semibold text-slate-600">
+                        {(() => {
+                          const packing = consumables.find(c => c.id === item.itemId);
+                          const rowQty = parseFloat(item.qty) || 0;
+                          return formatIDR((packing?.hargaBeliUnit || 0) * rowQty);
+                        })()}
+                      </div>
                       <button
                         type="button"
                         title="Hapus bahan packing"
@@ -599,7 +606,7 @@ export default function SalesTab({
                   <th className="px-5 py-3.5">Produk Jadi</th>
                   <th className="px-5 py-3.5">Qty</th>
                   <th className="px-5 py-3.5">Total Penjualan</th>
-                  <th className="px-5 py-3.5">Platform & Potongan</th>
+                  <th className="px-5 py-3.5">Platform & Biaya</th>
                   <th className="px-5 py-3.5">Margin Bersih</th>
                   <th className="px-5 py-3.5 text-center">Status</th>
                   <th className="px-5 py-3.5 text-right">Aksi</th>
@@ -626,7 +633,8 @@ export default function SalesTab({
 
                   const totalOmset = sale.hargaJual * sale.qty;
                   const feeValue = getPlatformFeeAmount(totalOmset, sale.platformFeeType, sale.platformFeeValue);
-                  const totalOutlay = feeValue + (sale.biayaOperasionalLuar || 0);
+                  const externalCost = sale.biayaOperasionalLuar || 0;
+                  const totalOutlay = feeValue + externalCost;
                   const cleanMargin = totalOmset - totalProdHPP - totalOutlay;
                   const cleanMarginPercent = totalOmset > 0 ? (cleanMargin / totalOmset) * 105 - 5 : 0; // Adjusted normalization
 
@@ -647,9 +655,12 @@ export default function SalesTab({
                       <td className="px-5 py-4 whitespace-nowrap font-mono text-cyan-700 font-bold">
                         {formatIDR(totalOmset)}
                       </td>
-                      <td className="px-5 py-4 whitespace-nowrap font-mono text-red-600">
-                        -{formatIDR(totalOutlay)}
-                        <span className="text-[9px] text-slate-400 block font-sans font-semibold">({sale.platformName})</span>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <div className="font-mono text-red-600 font-semibold">-{formatIDR(totalOutlay)}</div>
+                        <div className="text-[9px] text-slate-500 font-sans font-semibold leading-4">
+                          <span className="block">{sale.platformName}: -{formatIDR(feeValue)}</span>
+                          <span className="block">Kurir/lain: -{formatIDR(externalCost)}</span>
+                        </div>
                       </td>
                       <td className="px-5 py-4 whitespace-nowrap">
                         <div className="flex flex-col">
